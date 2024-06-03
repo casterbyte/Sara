@@ -1,6 +1,5 @@
 # Vex
 
----------------
 
 Autonomous RouterOS configuration analyzer to find security issues. No networking required, only read configurations.
 
