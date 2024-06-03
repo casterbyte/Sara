@@ -201,7 +201,9 @@ Here is an example of the analyzed config:
 ------------------------------
 ```
 
+# Outro
 
+This is how RouterOS configuration can be analyzed for security and hardening issues. The tool will be developed and maintained by me.
 
 
 
