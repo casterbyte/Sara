@@ -82,7 +82,7 @@ caster@kali:~/Vex$ python3 vex.py --config RouterOS.conf
 
 Here is an example of the analyzed config:
 
-```bash
+```
 [+] Device Information:
 [*] Software ID: 7HD9-Z1QD
 [*] Model: C52iG-5HaxD2HaxD
