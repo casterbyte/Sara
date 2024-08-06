@@ -31,7 +31,6 @@ print("    For documentation visit: " + "https://github.com/casterbyte/Vex\n")
 print("    " + Fore.YELLOW + "Author: " + Style.RESET_ALL + "Magama Bazarov, <caster@exploit.org>")
 print("    " + Fore.YELLOW + "Pseudonym: " + Style.RESET_ALL + "Caster")
 print("    " + Fore.YELLOW + "Version: " + Style.RESET_ALL + "1.1")
-print("    " + Fore.YELLOW + "Codename: " + Style.RESET_ALL + "Envy\n")
 print("    " + Fore.WHITE + "CAUTION: " + Fore.YELLOW + "For the tool to work correctly, use the RouterOS configuration from using the" + Fore.WHITE + " export verbose" + Fore.YELLOW + " command\n")
 
 # Device Info
