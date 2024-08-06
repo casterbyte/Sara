@@ -1,805 +1,491 @@
-#!/usr/bin/env python3
-
-import argparse
 import re
+import argparse
 from colorama import init, Fore, Style
 
+# Colorama
 init(autoreset=True)
 
-def parse_arguments():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', required=True, help='RouterOS configuration file name')
-    return parser.parse_args()
-
-def load_config(file_path):
-    with open(file_path, 'r') as file:
-        return file.read().splitlines()
-
-def combine_multiline_statements(config_lines):
-    combined_lines = []
-    buffer = ""
-    for line in config_lines:
-        line = line.strip()
-        if line.endswith("\\"):
-            buffer += line[:-1] + " "
-        else:
-            buffer += line
-            combined_lines.append(buffer)
-            buffer = ""
-    return combined_lines
-
-def extract_device_info(config_lines):
-    software_id = None
-    model = None
-    serial_number = None
-    version = None
-
-    for line in config_lines:
-        if line.startswith("# software id ="):
-            software_id = line.split('=')[1].strip()
-        elif line.startswith("# model ="):
-            model = line.split('=')[1].strip()
-        elif line.startswith("# serial number ="):
-            serial_number = line.split('=')[1].strip()
-
-    return software_id, model, serial_number
-
-def extract_interfaces(config_lines):
-    interfaces = []
-    current_interface_type = None
-    
-    for line in config_lines:
-        line = line.strip()
-        if line.startswith('/interface '):
-            current_interface_type = line.split()[1]
-            continue
-
-        if line.startswith('/') and not line.startswith('/interface'):
-            current_interface_type = None
-
-        if current_interface_type:
-            if line.startswith('set ') or line.startswith('add '):
-                name_match = re.search(r'name=(\S+)', line)
-                default_name_match = re.search(r'default-name=(\S+)', line)
-                if name_match:
-                    interface_name = name_match.group(1)
-                    interfaces.append((current_interface_type, interface_name))
-                elif default_name_match:
-                    interface_name = default_name_match.group(1)
-                    interfaces.append((current_interface_type, interface_name))
-    
-    return interfaces
-
-def extract_ip_addresses(config_lines):
-    ip_addresses = []
-    ip_pattern = re.compile(r'^/ip address')
-    add_pattern = re.compile(r'add address=([\d\.\/]+)(?: disabled=\S+)? interface=(\S+) network=\S+')
-
-    inside_ip_address_block = False
-    
-    for line in config_lines:
-        if ip_pattern.match(line):
-            inside_ip_address_block = True
-            continue
-        
-        if inside_ip_address_block and line.startswith("add "):
-            add_match = add_pattern.search(line)
-            if add_match:
-                ip_address = add_match.group(1)
-                interface_name = add_match.group(2)
-                ip_addresses.append((ip_address, interface_name))
-
-    return ip_addresses
-
-def check_discovery_protocols(config_lines):
-    discovery_pattern = re.compile(r'^/ip neighbor discovery-settings')
-    set_pattern = re.compile(r'set discover-interface-list=(\S+)')
-    
-    for line in config_lines:
-        if discovery_pattern.match(line):
-            next_line_index = config_lines.index(line) + 1
-            if next_line_index < len(config_lines):
-                next_line = config_lines[next_line_index]
-                set_match = set_pattern.search(next_line)
-                if set_match:
-                    discovery_setting = set_match.group(1)
-                    if discovery_setting.lower() == 'all':
-                        return (True, f"detected set discover-interface-list={discovery_setting}")
-    return (False, "No security issues found with Discovery protocols.")
-
-def check_bandwidth_server(config_lines):
-    bandwidth_pattern = re.compile(r'^/tool bandwidth-server')
-    set_pattern_enabled = re.compile(r'set .*enabled=yes')
-    set_pattern_disabled = re.compile(r'set .*enabled=no')
-
-    inside_bandwidth_block = False
-    for line in config_lines:
-        if bandwidth_pattern.match(line):
-            inside_bandwidth_block = True
-            continue
-        
-        if inside_bandwidth_block:
-            if set_pattern_disabled.search(line):
-                return (False, "No issues found with Bandwidth Server.")
-            elif set_pattern_enabled.search(line):
-                return (True, "detected active Bandwidth Server with 'enabled=yes' setting")
-    
-    return (True, "detected active Bandwidth Server (default enabled)")
-
-def check_dns_settings(config_lines):
-    dns_pattern = re.compile(r'^/ip dns')
-    set_pattern = re.compile(r'set allow-remote-requests=yes')
-    
-    for line in config_lines:
-        if dns_pattern.match(line):
-            next_line_index = config_lines.index(line) + 1
-            if next_line_index < len(config_lines):
-                next_line = config_lines[next_line_index]
-                if set_pattern.search(next_line):
-                    return (True, "detected directive 'set allow-remote-requests=yes'")
-    return (False, "No issues found with DNS settings.")
-
-def check_ddns(config_lines):
-    ddns_pattern = re.compile(r'^/ip cloud')
-    set_pattern = re.compile(r'set ddns-enabled=yes')
-    
-    for line in config_lines:
-        if ddns_pattern.match(line):
-            next_line_index = config_lines.index(line) + 1
-            if next_line_index < len(config_lines):
-                next_line = config_lines[next_line_index]
-                if set_pattern.search(next_line):
-                    return (True, "DDNS is enabled. If not specifically used, it is recommended to disable it.")
-    return (False, "No issues found with DDNS settings.")
-
-def check_upnp_settings(config_lines):
-    upnp_pattern = re.compile(r'^/ip upnp')
-    set_pattern = re.compile(r'set .*enabled=(yes|no)')
-    
-    inside_upnp_block = False
-    
-    for line in config_lines:
-        if upnp_pattern.match(line):
-            inside_upnp_block = True
-            continue
-        
-        if inside_upnp_block:
-            set_match = set_pattern.search(line)
-            if set_match:
-                upnp_status = set_match.group(1)
-                if upnp_status == "yes":
-                    return (True, "detected directive 'set enabled=yes'")
-            inside_upnp_block = False
-            
-    return (False, "No issues found with UPnP settings.")
-
-def extract_firewall_rules(config_lines, table):
-    firewall_rules = []
-    firewall_pattern = re.compile(rf'^/ip firewall {table}')
-    add_pattern = re.compile(r'add .*')
-
-    inside_firewall_block = False
-    
-    for line in config_lines:
-        if firewall_pattern.match(line):
-            inside_firewall_block = True
-            continue
-        
-        if inside_firewall_block:
-            if line.startswith("add "):
-                firewall_rules.append(line)
-            else:
-                inside_firewall_block = False
-                
-    return firewall_rules
-
-def extract_nat_rules(config_lines):
-    nat_rules = []
-    nat_pattern = re.compile(r'^/ip firewall nat')
-    add_pattern = re.compile(r'add .*')
-
-    inside_nat_block = False
-    
-    for line in config_lines:
-        if nat_pattern.match(line):
-            inside_nat_block = True
-            continue
-        
-        if inside_nat_block:
-            if line.startswith("add "):
-                nat_rules.append(line)
-            else:
-                inside_nat_block = False
-                
-    return nat_rules
-
-def check_bpdu_guard(config_lines):
-    bridge_port_pattern = re.compile(r'^/interface bridge port')
-    bpdu_guard_pattern = re.compile(r'add .*bpdu-guard=no')
-    
-    for line in config_lines:
-        if bridge_port_pattern.match(line):
-            next_line_index = config_lines.index(line) + 1
-            while next_line_index < len(config_lines) and config_lines[next_line_index].startswith('add '):
-                if bpdu_guard_pattern.search(config_lines[next_line_index]):
-                    return (True, "detected 'bpdu-guard=no'. It is recommended to enable BPDU Guard to protect STP from attacks")
-                next_line_index += 1
-    return (False, "No issues found with BPDU Guard settings.")
-
-def check_ssh_settings(config_lines):
-    ssh_pattern = re.compile(r'^/ip ssh')
-    strong_crypto_pattern = re.compile(r'set .*strong-crypto=no')
-    
-    for line in config_lines:
-        if ssh_pattern.match(line):
-            next_line_index = config_lines.index(line) + 1
-            if next_line_index < len(config_lines):
-                next_line = config_lines[next_line_index]
-                if strong_crypto_pattern.search(next_line):
-                    return (True, "detected 'strong-crypto=no'. It is recommended to enable strong cryptographic ciphers for SSH")
-    return (False, "No issues found with SSH settings.")
-
-
-def check_dhcp_snooping(config_lines):
-    bridge_pattern = re.compile(r'^/interface bridge')
-    dhcp_snooping_pattern = re.compile(r'add .*dhcp-snooping=no')
-    
-    for line in config_lines:
-        if bridge_pattern.match(line):
-            next_line_index = config_lines.index(line) + 1
-            while next_line_index < len(config_lines) and config_lines[next_line_index].startswith('add '):
-                if dhcp_snooping_pattern.search(config_lines[next_line_index]):
-                    return (True, "detected 'dhcp-snooping=no'. It is recommended to enable DHCP Snooping to protect the network from DHCP attacks (DHCP Spoofing)")
-                next_line_index += 1
-    return (False, "No issues found with DHCP Snooping settings.")
-
-def extract_routes(config_lines):
-    routes = []
-    route_pattern = re.compile(r'^/ip route')
-    add_pattern = re.compile(r'add .*')
-
-    inside_route_block = False
-    
-    for line in config_lines:
-        if route_pattern.match(line):
-            inside_route_block = True
-            continue
-        
-        if inside_route_block:
-            if line.startswith("add "):
-                routes.append(line)
-            else:
-                inside_route_block = False
-                
-    return routes
-
-def check_socks_settings(config_lines):
-    socks_pattern = re.compile(r'^/ip socks')
-    set_pattern = re.compile(r'set .*enabled=yes')
-    
-    for line in config_lines:
-        if socks_pattern.match(line):
-            next_line_index = config_lines.index(line) + 1
-            if next_line_index < len(config_lines):
-                next_line = config_lines[next_line_index]
-                if set_pattern.search(next_line):
-                    return (True, "detected directive 'set enabled=yes'. SOCKS proxy can be used as a pivoting tool to access the internal network")
-    return (False, "No issues found with SOCKS settings.")
-
-def check_vrrp_authentication(config_lines):
-    vrrp_pattern = re.compile(r'^/interface vrrp')
-    auth_pattern = re.compile(r'authentication=none')
-    
-    for line in config_lines:
-        if vrrp_pattern.match(line):
-            next_line_index = config_lines.index(line) + 1
-            if next_line_index < len(config_lines):
-                next_line = config_lines[next_line_index]
-                if auth_pattern.search(next_line):
-                    return (True, "VRRP authentication is set to 'none'. This poses a risk of VRRP Hijacking.", "It's recommended to set the maximum priority to 255 if possible. If using VRRPv3, use FW to filter traffic towards MCAST 224.0.0.18")
-    return (False, "No issues found with VRRP authentication settings", None)
-
-def check_ospf_authentication(config_lines):
-    ospf_pattern = re.compile(r'^/routing ospf interface-template')
-    auth_pattern = re.compile(r'auth=')
-    
-    inside_ospf_block = False
-    
-    for line in config_lines:
-        if ospf_pattern.match(line):
-            inside_ospf_block = True
-            continue
-        
-        if inside_ospf_block:
-            if 'add ' in line:
-                if auth_pattern.search(line) is None:
-                    return (True, "OSPF authentication is not configured. This poses a security risk.")
-                inside_ospf_block = False
-                
-    return (False, "No issues found with OSPF authentication settings.")
-
-def check_ospf_passive_setting(config_lines):
-    ospf_pattern = re.compile(r'^/routing ospf interface-template')
-    auth_pattern = re.compile(r'auth=')
-    passive_pattern = re.compile(r'passive')
-
-    inside_ospf_block = False
-    auth_missing = False
-    passive_missing = False
-
-    for line in config_lines:
-        if ospf_pattern.match(line):
-            inside_ospf_block = True
-            continue
-        
-        if inside_ospf_block:
-            if 'add ' in line:
-                if auth_pattern.search(line) is None:
-                    auth_missing = True
-                if passive_pattern.search(line) is None:
-                    passive_missing = True
-                inside_ospf_block = False
-
-    return auth_missing, passive_missing
-
-def check_ip_services(config_lines):
-    services_pattern = re.compile(r'^/ip service')
-    telnet_pattern = re.compile(r'set telnet .*disabled=(yes|no)')
-    ftp_pattern = re.compile(r'set ftp .*disabled=(yes|no)')
-    api_pattern = re.compile(r'set api .*disabled=(yes|no)')
-    api_ssl_pattern = re.compile(r'set api-ssl .*disabled=(yes|no)')
-    ssh_pattern = re.compile(r'set ssh .*disabled=(yes|no)')
-    winbox_pattern = re.compile(r'set winbox .*disabled=(yes|no)')
-    www_pattern = re.compile(r'set www .*disabled=(yes|no)')
-    www_ssl_pattern = re.compile(r'set www-ssl .*disabled=(yes|no)')
-    
-    warnings = set()
-    info = set()
-    
-    inside_services_block = False
-    
-    for line in config_lines:
-        if services_pattern.match(line):
-            inside_services_block = True
-            continue
-        
-        if inside_services_block:
-            if telnet_pattern.search(line):
-                telnet_disabled = telnet_pattern.search(line).group(1)
-                if telnet_disabled == "no":
-                    warnings.add((True, "Telnet service is enabled. Turn it off, it's not safe to operate the equipment with it"))
-                else:
-                    info.add((False, Fore.YELLOW + Style.BRIGHT + "Telnet service is " + Fore.WHITE + Style.BRIGHT + "disabled"))
-            if ftp_pattern.search(line):
-                ftp_disabled = ftp_pattern.search(line).group(1)
-                if ftp_disabled == "no":
-                    warnings.add((True, "FTP service is enabled. If you don't use FTP, disable it and try not to store sensitive information there"))
-                else:
-                    info.add((False, Fore.YELLOW + Style.BRIGHT + "FTP service is " + Fore.WHITE + Style.BRIGHT + "disabled"))
-            if api_pattern.search(line):
-                api_disabled = api_pattern.search(line).group(1)
-                if api_disabled == "no":
-                    warnings.add((True, "API service is enabled. If not in use, it is recommended to disable it to prevent brute-force attacks"))
-                else:
-                    info.add((False, Fore.YELLOW + Style.BRIGHT + "API service is " + Fore.WHITE + Style.BRIGHT + "disabled"))
-            if api_ssl_pattern.search(line):
-                api_ssl_disabled = api_ssl_pattern.search(line).group(1)
-                if api_ssl_disabled == "no":
-                    warnings.add((True, "API-SSL service is enabled. If not in use, it is recommended to disable it to prevent brute-force attacks"))
-                else:
-                    info.add((False, Fore.YELLOW + Style.BRIGHT + "API-SSL service is " + Fore.WHITE + Style.BRIGHT + "disabled"))
-            if ssh_pattern.search(line):
-                ssh_disabled = ssh_pattern.search(line).group(1)
-                if ssh_disabled == "no":
-                    warnings.add((True, "SSH service is enabled. Filter access, you can use more secure key authentication"))
-                else:
-                    info.add((False, Fore.YELLOW + Style.BRIGHT + "SSH service is " + Fore.WHITE + Style.BRIGHT + "disabled"))
-            if winbox_pattern.search(line):
-                winbox_disabled = winbox_pattern.search(line).group(1)
-                if winbox_disabled == "no":
-                    warnings.add((True, "Winbox service is enabled. Winbox is constantly being attacked. Be careful with it, filter access"))
-                else:
-                    info.add((False, Fore.YELLOW + Style.BRIGHT + "Winbox service is " + Fore.WHITE + Style.BRIGHT + "disabled"))
-            if www_pattern.search(line):
-                www_disabled = www_pattern.search(line).group(1)
-                if www_disabled == "no":
-                    warnings.add((True, "HTTP service is enabled. Be careful with web-based control panels. Filter access"))
-                else:
-                    info.add((False, Fore.YELLOW + Style.BRIGHT + "HTTP service is " + Fore.WHITE + Style.BRIGHT + "disabled"))
-            if www_ssl_pattern.search(line):
-                www_ssl_disabled = www_ssl_pattern.search(line).group(1)
-                if www_ssl_disabled == "no":
-                    warnings.add((True, "HTTPS service is enabled. Be careful with web-based control panels. Filter access"))
-                else:
-                    info.add((False, Fore.YELLOW + Style.BRIGHT + "HTTPS service is " + Fore.WHITE + Style.BRIGHT + "disabled"))
-    
-    return list(warnings), list(info)
-
-def check_ntp_client(config_lines):
-    ntp_client_pattern = re.compile(r'^/system ntp client')
-    set_pattern = re.compile(r'set enabled=yes mode=unicast servers=(\S+)')
-
-    ntp_client_enabled = False
-    ntp_servers = []
-
-    for line in config_lines:
-        if ntp_client_pattern.match(line):
-            next_line_index = config_lines.index(line) + 1
-            if next_line_index < len(config_lines):
-                next_line = config_lines[next_line_index]
-                set_match = set_pattern.search(next_line)
-                if set_match:
-                    ntp_client_enabled = True
-                    ntp_servers = set_match.group(1).split(',')
-
-    if ntp_client_enabled:
-        return (True, f"NTP client is enabled. Servers: {', '.join(ntp_servers)}")
-    else:
-        return (False, "NTP client is not enabled or not using unicast mode.")
-
-def check_romon_settings(config_lines):
-    romon_pattern = re.compile(r'^/tool romon')
-    set_pattern = re.compile(r'set .*enabled=yes')
-
-    inside_romon_block = False
-
-    for line in config_lines:
-        if romon_pattern.match(line):
-            inside_romon_block = True
-            continue
-        
-        if inside_romon_block:
-            if set_pattern.search(line):
-                return (True, "ROMON is enabled. Be careful with this. If RouterOS is compromised, ROMON can be jumped to the next MikroTik hardware")
-            inside_romon_block = False
-    
-    return (False, "No issues found with ROMON settings.")
-
-def check_mac_telnet_server(config_lines):
-    mac_server_pattern = re.compile(r'^/tool mac-server')
-    allowed_interface_list_pattern = re.compile(r'set allowed-interface-list=all')
-
-    inside_mac_server_block = False
-    
-    for line in config_lines:
-        if mac_server_pattern.match(line):
-            inside_mac_server_block = True
-            continue
-        
-        if inside_mac_server_block:
-            if allowed_interface_list_pattern.search(line):
-                return (True, "MAC Telnet server is active on all interfaces. This reduces the security of the Winbox interface. Filter access")
-            inside_mac_server_block = False
-    
-    return (False, "No issues found with MAC Telnet Server settings.")
-
-def check_mac_winbox_server(config_lines):
-    mac_winbox_pattern = re.compile(r'^/tool mac-server mac-winbox')
-    inside_mac_winbox_block = False
-
-    for line in config_lines:
-        if mac_winbox_pattern.match(line):
-            inside_mac_winbox_block = True
-            continue
-        
-        if inside_mac_winbox_block:
-            if 'set allowed-interface-list=all' in line:
-                return (True, "MAC Winbox Server is accessible on all interfaces. This reduces the security of the Winbox interface. Filter access")
-            inside_mac_winbox_block = False
-    
-    return (False, "No issues found with MAC Winbox Server settings.")
-
-def check_mac_ping_server(config_lines):
-    mac_ping_pattern = re.compile(r'^/tool mac-server ping')
-    inside_mac_ping_block = False
-
-    for line in config_lines:
-        if mac_ping_pattern.match(line):
-            inside_mac_ping_block = True
-            continue
-        
-        if inside_mac_ping_block:
-            if 'set enabled=yes' in line:
-                return (True, "MAC Ping Server is enabled. Possible unwanted traffic")
-            inside_mac_ping_block = False
-    
-    return (False, "No issues found with MAC Ping Server settings.")
-
-def check_snmp_communities(config_lines):
-    snmp_pattern = re.compile(r'^/snmp community')
-    name_pattern = re.compile(r'name=(\S+)')
-    
-    issues_found = False
-    snmp_issues = []
-
-    inside_snmp_block = False
-
-    for line in config_lines:
-        if snmp_pattern.match(line):
-            inside_snmp_block = True
-            continue
-        
-        if inside_snmp_block:
-            name_match = name_pattern.search(line)
-            if name_match:
-                snmp_name = name_match.group(1)
-                if snmp_name.lower() in ["public", "private"]:
-                    issues_found = True
-                    snmp_issues.append(f"SNMP community '{snmp_name}' is set. Information Disclosure is possible. Please change SNMP community string")
-                    
-    if issues_found:
-        return (True, snmp_issues)
-    else:
-        return (False, "No issues found with SNMP settings.")
-
-if __name__ == "__main__":
-    banner = '''
-    VVVVVVVV           VVVVVVVV                                
-    V::::::V           V::::::V                                
-    V::::::V           V::::::V                                
-    V::::::V           V::::::V                                
-     V:::::V           V:::::Veeeeeeeeeeee xxxxxxx      xxxxxxx
-      V:::::V         V:::::ee::::::::::::eex:::::x    x:::::x 
-       V:::::V       V:::::e::::::eeeee:::::ex:::::x  x:::::x  
-        V:::::V     V:::::e::::::e     e:::::ex:::::xx:::::x   
-         V:::::V   V:::::Ve:::::::eeeee::::::e x::::::::::x    
-          V:::::V V:::::V e:::::::::::::::::e   x::::::::x     
-           V:::::V:::::V  e::::::eeeeeeeeeee    x::::::::x     
-            V:::::::::V   e:::::::e            x::::::::::x    
-             V:::::::V    e::::::::e          x:::::xx:::::x   
-              V:::::V      e::::::::eeeeeeee x:::::x  x:::::x  
-               V:::V        ee:::::::::::::ex:::::x    x:::::x 
-                VVV           eeeeeeeeeeeeexxxxxxx      xxxxxxx                                                  
+# Banner
+banner = '''                                                                           
+                                       .%.      .%.                                       
+                                      :@@@:    .%@@-                                      
+                                     :@@+@@:  .%@*@@-                                     
+                                    :@@- -@@:.@@= .@@=                                    
+                                   :@@:   :@@@@=   .@@-                                   
+                                  :@@:     =@@+     .@@=                                  
+                                 :@@:     :@@@@-     .@@=                                 
+                                -@@:     -@@-:@@=     .%@+                                
+                               -@@:     =@@-  :@@=     .%@+                               
+                              =@@@@@@@@@@@@@@@@@@@@@@@@@@@@=                             
+                                      @@%        @@*                             
+                                     *@#          #@#                                     
+                                    #@#            *@#                                    
+                                   #@*              +@%                                   
+                                  %@@@@@@@@@@@@@@@@@@@@%                                                                                                                                                                  
 '''
 
-    print(banner)
-    print("    Vex: RouterOS Security Inspector")
-    print("    Designed for security engineers\n")
-    print("    For documentation visit: https://github.com/casterbyte/Vex\n")
-    print("    " + Fore.YELLOW + "Author: " + Style.RESET_ALL + "Magama Bazarov, <caster@exploit.org>")
-    print("    " + Fore.YELLOW + "Pseudonym: " + Style.RESET_ALL + "Caster")
-    print("    " + Fore.YELLOW + "Version: " + Style.RESET_ALL + "1.0\n")
-    print("    " + Fore.YELLOW + Style.BRIGHT + "DISCLAIMER: The tool is intended solely for analyzing the security of RouterOS hardware. The author is not responsible for any damage caused by using this tool")
-    print("    " + Fore.YELLOW + Style.BRIGHT + "CAUTION: for the tool to work correctly, use the RouterOS configuration from using the" + Fore.WHITE + Style.BRIGHT + " export verbose command\n")
+print(banner)
+print("    Vex: RouterOS Security Inspector")
+print("    Designed for security engineers\n")
+print("    For documentation visit: " + "https://github.com/casterbyte/Vex\n")
+print("    " + Fore.YELLOW + "Author: " + Style.RESET_ALL + "Magama Bazarov, <caster@exploit.org>")
+print("    " + Fore.YELLOW + "Pseudonym: " + Style.RESET_ALL + "Caster")
+print("    " + Fore.YELLOW + "Version: " + Style.RESET_ALL + "1.1")
+print("    " + Fore.YELLOW + "Codename: " + Style.RESET_ALL + "Envy\n")
+print("    " + Fore.WHITE + "CAUTION: " + Fore.YELLOW + "For the tool to work correctly, use the RouterOS configuration from using the" + Fore.WHITE + " export verbose" + Fore.YELLOW + " command\n")
 
-
-    args = parse_arguments()
-    config_lines = load_config(args.config)
-    config_lines = combine_multiline_statements(config_lines)
+# Device Info
+def extract_info(config_content):
+    info_found = False
+    info = []
     
-    software_id, model, serial_number = extract_device_info(config_lines)
-    print(Fore.WHITE + Style.BRIGHT + "[+] Device Information:" + Style.RESET_ALL)
+    software_id_pattern = r'# software id = (\S+)'
+    model_pattern = r'# model = (\S+)'
+    serial_number_pattern = r'# serial number = (\S+)'
+
+    software_id = re.search(software_id_pattern, config_content)
+    model = re.search(model_pattern, config_content)
+    serial_number = re.search(serial_number_pattern, config_content)
+
     if software_id:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] Software ID: " + Fore.WHITE + Style.BRIGHT + f"{software_id}")
-    else:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] Software ID: " + Fore.WHITE + Style.BRIGHT + "unknown")
+        info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Software ID: {Style.BRIGHT + Fore.YELLOW}{software_id.group(1)}{Style.RESET_ALL}")
+        info_found = True
     if model:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] Model: " + Fore.WHITE + Style.BRIGHT + f"{model}")
-    else:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] Model: " + Fore.WHITE + Style.BRIGHT + "unknown")
+        info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Model: {Style.BRIGHT + Fore.YELLOW}{model.group(1)}{Style.RESET_ALL}")
+        info_found = True
     if serial_number:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] Serial Number: " + Fore.WHITE + Style.BRIGHT + f"{serial_number}")
-    else:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] Serial Number: " + Fore.WHITE + Style.BRIGHT + "unknown")
-    print("------------------------------")
+        info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Serial Number: {Style.BRIGHT + Fore.YELLOW}{serial_number.group(1)}{Style.RESET_ALL}")
+        info_found = True
     
-    interfaces = extract_interfaces(config_lines)
-    print(Fore.WHITE + Style.BRIGHT + "[+] Interfaces found:" + Style.RESET_ALL)
-    if interfaces:
-        for interface_type, interface_name in interfaces:
-            print(Fore.YELLOW + Style.BRIGHT + "[*] Type: " + Fore.WHITE + Style.BRIGHT + f"{interface_type}, " + Fore.YELLOW + Style.BRIGHT + "Name: " + Fore.WHITE + Style.BRIGHT + f"{interface_name}")
-    else:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] No interfaces found.")
-    print("------------------------------")
+    if info_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] Device Information:{Style.RESET_ALL}")
+        for line in info:
+            print(line)
+
+# Discovery
+def check_discovery_settings(config_content):
+    discovery_found = False
+    discovery_info = []
     
-    ip_addresses = extract_ip_addresses(config_lines)
-    print(Fore.WHITE + Style.BRIGHT + "[+] IP Addresses found:" + Style.RESET_ALL)
-    if ip_addresses:
-        for ip_address, interface_name in ip_addresses:
-            print(Fore.YELLOW + Style.BRIGHT + "[*] IP Address: " + Fore.WHITE + Style.BRIGHT + f"{ip_address}, " + Fore.YELLOW + Style.BRIGHT + "Interface: " + Fore.WHITE + Style.BRIGHT + f"{interface_name}")
-    else:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] No IP addresses found.")
-    print("------------------------------")
+    discovery_pattern = r'/ip neighbor discovery-settings[\s\S]*?set discover-interface-list=all'
+    if re.search(discovery_pattern, config_content):
+        discovery_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}Discovery protocols are enabled on all interfaces{Style.RESET_ALL}")
+        discovery_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Information Gathering{Style.RESET_ALL}")
+        discovery_found = True
     
-    discovery_protocol_status, discovery_protocol_message = check_discovery_protocols(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] Discovery Protocols Check:" + Style.RESET_ALL)
-    if discovery_protocol_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{discovery_protocol_message}. Possible disclosure of sensitive information")
-    else:
-        print(f"[*] {discovery_protocol_message}")
-    print("------------------------------")
+    if discovery_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] Discovery Protocols:{Style.RESET_ALL}")
+        for line in discovery_info:
+            print(line)
 
-    bandwidth_server_status, bandwidth_server_message = check_bandwidth_server(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] Bandwidth Server Check:" + Style.RESET_ALL)
-    if bandwidth_server_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{bandwidth_server_message}. Possible unwanted traffic towards Bandwidth Server, be careful")
-    else:
-        print(f"[*] {bandwidth_server_message}")
-    print("------------------------------")
-
-    dns_settings_status, dns_settings_message = check_dns_settings(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] DNS Settings Check:" + Style.RESET_ALL)
-    if dns_settings_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{dns_settings_message}. This router is a DNS server, be careful")
-        print(Fore.YELLOW + Style.BRIGHT + "[*] Router is acting as a DNS server and should restrict DNS traffic from external sources to prevent DNS Flood attacks")
-    else:
-        print(f"[*] {dns_settings_message}")
-    print("------------------------------")
-
-    ddns_status, ddns_message = check_ddns(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] DDNS Settings Check:" + Style.RESET_ALL)
-    if ddns_status:
-        print(Fore.YELLOW + Style.BRIGHT + f"[*] Warning: " + Fore.WHITE + Style.BRIGHT + f"{ddns_message}")
-    else:
-        print(f"[*] {ddns_message}")
-    print("------------------------------")
-
-    upnp_settings_status, upnp_settings_message = check_upnp_settings(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] UPnP Settings Check:" + Style.RESET_ALL)
-    if upnp_settings_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{upnp_settings_message}. The presence of active UPnP can be indicative of post-exploitation of a compromised RouterOS, and it can also be the cause of an external perimeter breach. Switch it off")
-    else:
-        print(f"[*] {upnp_settings_message}")
-    print("------------------------------")
-
-    ssh_status, ssh_message = check_ssh_settings(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] SSH Settings Check:" + Style.RESET_ALL)
-    if ssh_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{ssh_message}")
-    else:
-        print(f"[*] {ssh_message}")
-    print("------------------------------")
-
-    filter_rules = extract_firewall_rules(config_lines, 'filter')
-    print(Fore.GREEN + Style.BRIGHT + "[+] Firewall Filter Rules found:" + Style.RESET_ALL)
-    if filter_rules:
-        for rule in filter_rules:
-            print(Fore.YELLOW + Style.BRIGHT + "[*] Rule:" + Fore.WHITE + Style.BRIGHT + f" {rule}")
-    else:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] No filter rules found.")
-    print(Style.BRIGHT + Fore.YELLOW + "[!] Don't forget to use the 'Drop All Other' rule on the external interface of the router. This helps protect the router from external perimeter breaches.")
-    print("------------------------------")
-
-    mangle_rules = extract_firewall_rules(config_lines, 'mangle')
-    print(Fore.GREEN + Style.BRIGHT + "[+] Firewall Mangle Rules found:" + Style.RESET_ALL)
-    if mangle_rules:
-        for rule in mangle_rules:
-            print(Fore.YELLOW + Style.BRIGHT + "[*] Rule:" + Fore.WHITE + Style.BRIGHT + f" {rule}")
-    else:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] No mangle rules found.")
-    print(Style.BRIGHT + Fore.YELLOW + "[!] In some scenarios, using the mangle table can help save CPU resources.")
-    print("------------------------------")
-
-    nat_rules = extract_nat_rules(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] Firewall NAT Rules found:" + Style.RESET_ALL)
-    if nat_rules:
-        for rule in nat_rules:
-            print(Fore.YELLOW + Style.BRIGHT + "[*] Rule:" + Fore.WHITE + Style.BRIGHT + f" {rule}")
-    else:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] No NAT rules found.")
-    print("------------------------------")
-
-    raw_rules = extract_firewall_rules(config_lines, 'raw')
-    print(Fore.GREEN + Style.BRIGHT + "[+] Firewall Raw Rules found:" + Style.RESET_ALL)
-    if raw_rules:
-        for rule in raw_rules:
-            print(Fore.YELLOW + Style.BRIGHT + "[*] Rule:" + Fore.WHITE + Style.BRIGHT + f" {rule}")
-    else:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] No raw rules found.")
-    print("------------------------------")
-
-    routes = extract_routes(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] Routes:" + Style.RESET_ALL)
-    if routes:
-        for route in routes:
-            print(Fore.YELLOW + Style.BRIGHT + f"[*] Route:" + Fore.WHITE + Style.BRIGHT + f" {route}")
-    else:
-        print(Fore.YELLOW + Style.BRIGHT + "[*] No routes found.")
-    print("------------------------------")
+# Bandwidth Server
+def check_bandwidth_server(config_content):
+    bandwidth_found = False
+    bandwidth_info = []
     
-    socks_status, socks_message = check_socks_settings(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] SOCKS Settings Check:" + Style.RESET_ALL)
-    if socks_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{socks_message}")
-    else:
-        print(f"[*] {socks_message}")
-    print("------------------------------")
+    bandwidth_pattern = r'/tool bandwidth-server[\s\S]*?set[\s\S]*?enabled=yes'
+    if re.search(bandwidth_pattern, config_content):
+        bandwidth_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}Bandwidth Server is enabled{Style.RESET_ALL}")
+        bandwidth_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential misuse for traffic analysis and network performance degradation{Style.RESET_ALL}")
+        bandwidth_found = True
     
-    ip_services_warnings, ip_services_info = check_ip_services(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] IP Services Check:" + Style.RESET_ALL)
-    if ip_services_warnings:
-        for status, message in ip_services_warnings:
-            if status:
-                print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{message}")
-    if ip_services_info:
-        for status, message in ip_services_info:
-            if not status:
-                print(Fore.YELLOW + Style.BRIGHT + f"[*] " + message)
-    print("------------------------------")
+    if bandwidth_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] Bandwidth Server:{Style.RESET_ALL}")
+        for line in bandwidth_info:
+            print(line)
 
-    bpdu_guard_status, bpdu_guard_message = check_bpdu_guard(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] BPDU Guard Settings Check:" + Style.RESET_ALL)
-    if bpdu_guard_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{bpdu_guard_message}")
+# DNS Check
+def check_dns_settings(config_content):
+    dns_found = False
+    dns_info = []
+    
+    dns_pattern = r'/ip dns[\s\S]*?set[\s\S]*?allow-remote-requests=yes'
+    if re.search(dns_pattern, config_content):
+        dns_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}Router is configured as a DNS server{Style.RESET_ALL}")
+        dns_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}DNS Flood{Style.RESET_ALL}")
+        dns_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Consider closing this port from the internet to avoid unwanted traffic{Style.RESET_ALL}")
+        dns_found = True
+    
+    if dns_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] DNS Settings:{Style.RESET_ALL}")
+        for line in dns_info:
+            print(line)
+
+# UPnP Check
+def check_upnp_settings(config_content):
+    upnp_found = False
+    upnp_info = []
+    
+    upnp_pattern = r'/ip upnp[\s\S]*?set[\s\S]*?enabled=yes'
+    if re.search(upnp_pattern, config_content):
+        upnp_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}UPnP is enabled{Style.RESET_ALL}")
+        upnp_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential unauthorized port forwarding and security risks{Style.RESET_ALL}")
+        upnp_found = True
+    
+    if upnp_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] UPnP Settings:{Style.RESET_ALL}")
+        for line in upnp_info:
+            print(line)
+
+# DDNS Check
+def check_ddns_settings(config_content):
+    ddns_found = False
+    ddns_info = []
+    
+    ddns_pattern = r'/ip cloud[\s\S]*?set[\s\S]*?ddns-enabled=yes'
+    if re.search(ddns_pattern, config_content):
+        ddns_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}Dynamic DNS is enabled{Style.RESET_ALL}")
+        ddns_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Exposure to dynamic IP changes and potential unauthorized access{Style.RESET_ALL}")
+        ddns_found = True
+    
+    if ddns_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] DDNS Settings:{Style.RESET_ALL}")
+        for line in ddns_info:
+            print(line)
+
+# SSH Strong Crypto
+def check_ssh_settings(config_content):
+    ssh_found = False
+    ssh_info = []
+    
+    ssh_pattern = r'/ip ssh[\s\S]*?set[\s\S]*?strong-crypto=no'
+    if re.search(ssh_pattern, config_content):
+        ssh_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}SSH strong crypto is disabled (strong-crypto=no){Style.RESET_ALL}")
+        ssh_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Less secure SSH connections{Style.RESET_ALL}")
+        ssh_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Enable strong crypto (strong-crypto=yes) for enhanced security. This will use stronger encryption, HMAC algorithms, larger DH primes, and disallow weaker ones{Style.RESET_ALL}")
+        ssh_found = True
+    
+    if ssh_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] SSH Strong Crypto:{Style.RESET_ALL}")
+        for line in ssh_info:
+            print(line)
+
+# SOCKS Check
+def check_socks_settings(config_content):
+    socks_found = False
+    socks_info = []
+    
+    socks_pattern = r'/ip socks[\s\S]*?set[\s\S]*?enabled=yes'
+    if re.search(socks_pattern, config_content):
+        socks_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}SOCKS proxy is enabled{Style.RESET_ALL}")
+        socks_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential unauthorized access and misuse of network resources{Style.RESET_ALL}")
+        socks_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable SOCKS proxy or ensure it is properly secured. SOCKS can be used maliciously if RouterOS is compromised.{Style.RESET_ALL}")
+        socks_found = True
+    
+    if socks_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] SOCKS Settings:{Style.RESET_ALL}")
+        for line in socks_info:
+            print(line)
+
+# RMI Check
+def rmi_check(config_content):
+    ip_service_found = False
+    ip_service_info = []
+
+    services = {
+        "telnet": r'/ip service[\s\S]*?set telnet[\s\S]*?disabled=no',
+        "ftp": r'/ip service[\s\S]*?set ftp[\s\S]*?disabled=no',
+        "api": r'/ip service[\s\S]*?set api[\s\S]*?disabled=no',
+        "api-ssl": r'/ip service[\s\S]*?set api-ssl[\s\S]*?disabled=no'
+    }
+
+    for service, pattern in services.items():
+        if re.search(pattern, config_content):
+            ip_service_info.append(f"{Fore.WHITE}" + "-" * 15 + Style.RESET_ALL)
+            if service == "telnet":
+                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}Telnet service is enabled {Style.BRIGHT + Fore.WHITE}(disabled=no){Style.RESET_ALL}")
+                ip_service_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Insecure management panel, potential data interception during MITM attack{Style.RESET_ALL}")
+                ip_service_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable Telnet to secure the router{Style.RESET_ALL}")
+                ip_service_found = True
+
+            if service == "ftp":
+                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}FTP service is enabled {Style.BRIGHT + Fore.WHITE}(disabled=no){Style.RESET_ALL}")
+                ip_service_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Insecure management panel; potential data interception during MITM attack{Style.RESET_ALL}")
+                ip_service_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable FTP to secure the router{Style.RESET_ALL}")
+                ip_service_found = True
+
+            if service == "api":
+                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}API service is enabled {Style.BRIGHT + Fore.WHITE}(disabled=no){Style.RESET_ALL}")
+                ip_service_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential brute force attack{Style.RESET_ALL}")
+                ip_service_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable API or secure it properly to prevent brute force attacks{Style.RESET_ALL}")
+                ip_service_found = True
+
+            if service == "api-ssl":
+                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}API-SSL service is enabled {Style.BRIGHT + Fore.WHITE}(disabled=no){Style.RESET_ALL}")
+                ip_service_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential brute force attack{Style.RESET_ALL}")
+                ip_service_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable API-SSL or secure it properly to prevent brute force attacks{Style.RESET_ALL}")
+                ip_service_found = True
+
+            # Check for unrestricted access
+            address_pattern = rf'/ip service[\s\S]*?set {service}[\s\S]*?address=""'
+            if re.search(address_pattern, config_content):
+                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}Service has unrestricted access{Style.RESET_ALL}")
+                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}Management interfaces are accessible from any subnet{Style.RESET_ALL}")
+                ip_service_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Restrict access to trusted subnets{Style.RESET_ALL}")
+                ip_service_found = True
+
+    if ip_service_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] RMI Settings:{Style.RESET_ALL}")
+        for line in ip_service_info:
+            print(line)
+# ROMON
+def check_romon(config_content):
+    romon_info = []
+
+    romon_pattern = r'/tool romon[\s\S]*?set[\s\S]*?enabled=yes'
+    if re.search(romon_pattern, config_content):
+        romon_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}ROMON is enabled{Style.RESET_ALL}")
+        romon_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}ROMON can be a jump point to other MikroTik devices and should be monitored carefully{Style.RESET_ALL}")
+        romon_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Monitor ROMON activities and ensure proper security measures are in place{Style.RESET_ALL}")
     else:
-        print(f"[*] {bpdu_guard_message}")
-    print("------------------------------")
+        romon_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] ROMON is not enabled{Style.RESET_ALL}")
 
-    romon_status, romon_message = check_romon_settings(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] ROMON Settings Check:" + Style.RESET_ALL)
-    if romon_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{romon_message}")
-    else:
-        print(f"[*] {romon_message}")
-    print("------------------------------")
+    if romon_info:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] ROMON Settings:{Style.RESET_ALL}")
+        for line in romon_info:
+            print(line)
 
-    mac_telnet_status, mac_telnet_message = check_mac_telnet_server(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] MAC Telnet Server Check:" + Style.RESET_ALL)
-    if mac_telnet_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{mac_telnet_message}")
-    else:
-        print(f"[*] {mac_telnet_message}")
-    print("------------------------------")
+# MAC Telnet Server
+def check_mac_server(config_content):
+    mac_server_found = False
+    mac_server_info = []
 
-    mac_winbox_status, mac_winbox_message = check_mac_winbox_server(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] MAC Winbox Server Check:" + Style.RESET_ALL)
-    if mac_winbox_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{mac_winbox_message}")
-    else:
-        print(f"[*] {mac_winbox_message}")
-    print("------------------------------")
+    mac_server_pattern = r'/tool mac-server[\s\S]*?set[\s\S]*?allowed-interface-list=all'
+    if re.search(mac_server_pattern, config_content):
+        mac_server_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}MAC Telnet server is active on all interfaces{Style.RESET_ALL}")
+        mac_server_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}This reduces the security of the Winbox interface. Filter access{Style.RESET_ALL}")
+        mac_server_found = True
 
-    mac_ping_status, mac_ping_message = check_mac_ping_server(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] MAC Ping Server Check:" + Style.RESET_ALL)
-    if mac_ping_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{mac_ping_message}")
-    else:
-        print(f"[*] {mac_ping_message}")
-    print("------------------------------")
+    if mac_server_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] MAC Server Settings:{Style.RESET_ALL}")
+        for line in mac_server_info:
+            print(line)
 
-    dhcp_snooping_status, dhcp_snooping_message = check_dhcp_snooping(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] DHCP Snooping Settings Check:" + Style.RESET_ALL)
-    if dhcp_snooping_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{dhcp_snooping_message}")
-    else:
-        print(f"[*] {dhcp_snooping_message}")
-    print("------------------------------")
+# MAC Winbox Server
+def check_mac_winbox_server(config_content):
+    mac_winbox_found = False
+    mac_winbox_info = []
 
-    ntp_client_status, ntp_client_message = check_ntp_client(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] NTP Client Settings Check:" + Style.RESET_ALL)
-    if ntp_client_status:
-        print(Fore.YELLOW + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{ntp_client_message}")
-    else:
-        print(f"[*] {ntp_client_message}")
-    print("------------------------------")
+    mac_winbox_pattern = r'/tool mac-server mac-winbox[\s\S]*?set[\s\S]*?allowed-interface-list=all'
+    if re.search(mac_winbox_pattern, config_content):
+        mac_winbox_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}MAC Winbox Server is accessible on all interfaces{Style.RESET_ALL}")
+        mac_winbox_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}This reduces the security of the Winbox interface. Filter access{Style.RESET_ALL}")
+        mac_winbox_found = True
 
-    vrrp_auth_status, vrrp_auth_message, vrrp_auth_advice = check_vrrp_authentication(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] VRRP Security Check:" + Style.RESET_ALL)
-    if vrrp_auth_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{vrrp_auth_message}")
-        if vrrp_auth_advice:
-            print(Fore.YELLOW + Style.BRIGHT + f"[!] Advice: {vrrp_auth_advice}")
-    else:
-        print(f"[*] {vrrp_auth_message}")
-    print("------------------------------")
+    if mac_winbox_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] MAC Winbox Server Settings:{Style.RESET_ALL}")
+        for line in mac_winbox_info:
+            print(line)
 
-    ospf_auth_status, ospf_passive_status = check_ospf_passive_setting(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] OSPF Security Check:" + Style.RESET_ALL)
-    if ospf_auth_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + "OSPF authentication is not configured. There is a risk of connecting an illegal OSPF speaker")
-    if ospf_passive_status:
-        print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + "OSPF passive interfaces are not configured. There is a risk of connecting an illegal OSPF speaker")
-    if not ospf_auth_status and not ospf_passive_status:
-        print(f"[*] No issues found with OSPF settings.")
-    print("------------------------------")
+# MAC Ping Server
+def check_mac_ping_server(config_content):
+    mac_ping_found = False
+    mac_ping_info = []
 
-    snmp_status, snmp_message = check_snmp_communities(config_lines)
-    print(Fore.GREEN + Style.BRIGHT + "[+] SNMP Security Check:" + Style.RESET_ALL)
-    if snmp_status:
-        for message in snmp_message:
-            print(Fore.RED + Style.BRIGHT + f"[*] Security Warning: " + Fore.WHITE + Style.BRIGHT + f"{message}")
-    else:
-        print(f"[*] {snmp_message}")
-    print("------------------------------")
+    mac_ping_pattern = r'/tool mac-server ping[\s\S]*?set[\s\S]*?enabled=yes'
+    if re.search(mac_ping_pattern, config_content):
+        mac_ping_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}MAC Ping Server is enabled{Style.RESET_ALL}")
+        mac_ping_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Possible unwanted traffic{Style.RESET_ALL}")
+        mac_ping_found = True
 
-# end of code
+    if mac_ping_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] MAC Ping Server Settings:{Style.RESET_ALL}")
+        for line in mac_ping_info:
+            print(line)
+
+# VRRP 
+def check_vrrp_authentication(config_content):
+    vrrp_info = []
+    vrrp_pattern = r'/interface vrrp[\s\S]*?set[\s\S]*?authentication=none[\s\S]*?name=(\S+)[\s\S]*?interface=(\S+)[\s\S]*?priority=(\d+)'
+    
+    matches = re.finditer(vrrp_pattern, config_content)
+
+    for match in matches:
+        interface = match.group(2)
+        
+        vrrp_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}VRRP is running without authentication " + Fore.WHITE + "(authentication=none)")        
+        vrrp_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Interface: {Style.BRIGHT + Fore.YELLOW}{interface}{Style.RESET_ALL}")
+        vrrp_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Lack of authentication allows an attacker to perform MITM (VRRP Spoofing){Style.RESET_ALL}")
+
+    if vrrp_info:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] VRRP Authentication:{Style.RESET_ALL}")
+        for line in vrrp_info:
+            print(line)
+
+# SNMP Community Check
+def check_snmp_community(config_content):
+    snmp_found = False
+    snmp_info = []
+
+    public_pattern = r'/snmp community[\s\S]*?set[\s\S]*?name=public'
+    private_pattern = r'/snmp community[\s\S]*?set[\s\S]*?name=private'
+    
+    public_match = re.search(public_pattern, config_content)
+    private_match = re.search(private_pattern, config_content)
+
+    if public_match:
+        snmp_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}SNMP community 'public' is in use{Style.RESET_ALL}")
+        snmp_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Information Gathering{Style.RESET_ALL}")
+        snmp_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Change the community name to something more secure{Style.RESET_ALL}")
+        snmp_found = True
+
+    if private_match:
+        snmp_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}SNMP community 'private' is in use{Style.RESET_ALL}")
+        snmp_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Information Gathering{Style.RESET_ALL}")
+        snmp_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Change the community name to something more secure{Style.RESET_ALL}")
+        snmp_found = True
+
+    if snmp_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] SNMP:{Style.RESET_ALL}")
+        for line in snmp_info:
+            print(line)
+
+# OSPF Check
+def check_ospf_settings(config_content):
+    ospf_found = False
+    ospf_info = []
+
+    ospf_interface_pattern = r'/routing ospf interface-template[\s\S]*?'
+    passive_pattern = r'/routing ospf interface-template[\s\S]*?passive'
+    auth_pattern = r'/routing ospf interface-template[\s\S]*?auth='
+
+    ospf_interface_match = re.search(ospf_interface_pattern, config_content)
+    passive_match = re.search(passive_pattern, config_content)
+    auth_match = re.search(auth_pattern, config_content)
+
+    if ospf_interface_match:
+        if not passive_match:
+            ospf_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}No passive interfaces in OSPF configuration{Style.RESET_ALL}")
+            ospf_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}This allows an attacker to connect to the OSPF domain{Style.RESET_ALL}")
+            ospf_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.YELLOW}Configure passive interfaces to enhance security{Style.RESET_ALL}")
+            ospf_found = True
+
+        if not auth_match:
+            ospf_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}No authentication in OSPF configuration{Style.RESET_ALL}")
+            ospf_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}This allows unauthorized access to the OSPF domain{Style.RESET_ALL}")
+            ospf_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.YELLOW}Configure authentication for OSPF to enhance security{Style.RESET_ALL}")
+            ospf_found = True
+
+    if ospf_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] OSPF Settings:{Style.RESET_ALL}")
+        for line in ospf_info:
+            print(line)
+
+# User Settings Check (Pass Length)
+def check_user_settings(config_content):
+    user_settings_found = False
+    user_settings_info = []
+
+    user_settings_pattern = r'/user settings[\s\S]*?set[\s\S]*?minimum-categories=0[\s\S]*?minimum-password-length=0'
+    if re.search(user_settings_pattern, config_content):
+        user_settings_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}No minimum password complexity or length requirements{Style.RESET_ALL}")
+        user_settings_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.YELLOW}Set minimum password complexity and length requirements to enhance security{Style.RESET_ALL}")
+        user_settings_found = True
+
+    if user_settings_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] Password Strength Requirements:{Style.RESET_ALL}")
+        for line in user_settings_info:
+            print(line)
+
+# PoE Check
+def check_poe_settings(config_content):
+    poe_found = False
+    poe_info = []
+
+    poe_auto_on_pattern = r'/interface ethernet[\s\S]*?poe-out=auto-on'
+    poe_forced_on_pattern = r'/interface ethernet[\s\S]*?poe-out=forced-on'
+
+    poe_auto_on_match = re.search(poe_auto_on_pattern, config_content)
+    poe_forced_on_match = re.search(poe_forced_on_pattern, config_content)
+
+    if poe_auto_on_match:
+        poe_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}PoE is set to auto-on{Style.RESET_ALL}")
+        poe_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}There is a risk of damaging connected devices by unexpectedly supplying power to the port{Style.RESET_ALL}")
+        poe_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.YELLOW}Review and set PoE settings appropriately{Style.RESET_ALL}")
+        poe_found = True
+
+    if poe_forced_on_match:
+        poe_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}PoE is set to forced-on{Style.RESET_ALL}")
+        poe_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}There is a significant risk of damaging connected devices by unexpectedly supplying power to the port{Style.RESET_ALL}")
+        poe_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.YELLOW}Review and set PoE settings appropriately{Style.RESET_ALL}")
+        poe_found = True
+
+    if poe_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] PoE Settings:{Style.RESET_ALL}")
+        for line in poe_info:
+            print(line)
+
+# SMB Check
+def check_smb_settings(config_content):
+    smb_found = False
+    smb_info = []
+
+    smb_section_pattern = r'/ip smb\s*set\s.*?enabled=(\w+)'
+    match = re.search(smb_section_pattern, config_content)
+
+    if match and match.group(1) == 'yes':
+        smb_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}SMB is enabled{Style.RESET_ALL}")
+        smb_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Reading files, potential CVE-2018-7445{Style.RESET_ALL}")
+        smb_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Are you sure you want SMB? If you don't need it, turn it off. Be careful{Style.RESET_ALL}")
+        smb_found = True
+    
+    if smb_found:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] SMB Settings:{Style.RESET_ALL}")
+        for line in smb_info:
+            print(line)
+
+# Main
+def main():
+    parser = argparse.ArgumentParser(description="Vex: RouterOS Security Inspector")
+    parser.add_argument("--config", required=True, type=str, help="Path to the RouterOS configuration file")
+    args = parser.parse_args()
+    
+    config_file = args.config
+    
+    print(f"{Fore.GREEN}[*] Config Analyzing...{Style.RESET_ALL}")
+    try:
+        with open(config_file, 'r') as file:
+            config_content = file.read()
+        extract_info(config_content)
+        check_discovery_settings(config_content)
+        check_bandwidth_server(config_content)
+        check_dns_settings(config_content)
+        check_ddns_settings(config_content)
+        check_upnp_settings(config_content)
+        check_ssh_settings(config_content)
+        check_socks_settings(config_content)
+        rmi_check(config_content)
+        check_romon(config_content)
+        check_mac_server(config_content)
+        check_mac_winbox_server(config_content)
+        check_mac_ping_server(config_content)
+        check_vrrp_authentication(config_content)
+        check_snmp_community(config_content)
+        check_ospf_settings(config_content)
+        check_user_settings(config_content)
+        check_poe_settings(config_content)
+        check_smb_settings(config_content)
+    except Exception as e:
+        print(f"{Fore.RED}Error reading file: {e}{Style.RESET_ALL}")
+
+if __name__ == "__main__":
+    main()

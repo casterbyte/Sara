@@ -1,4 +1,4 @@
-# Vex
+# Vex: RouterOS Security Inspector
 
 
 Autonomous RouterOS configuration analyzer to find security issues. No networking required, only read configurations.
@@ -11,7 +11,7 @@ Designed for security engineers
 
 Author: Magama Bazarov, <caster@exploit.org>
 Pseudonym: Caster
-Version: 1.0
+Version: 1.1
 ```
 
 # Disclaimer
@@ -23,35 +23,28 @@ The tool is intended solely for analyzing the security of RouterOS hardware. The
 
 It is written in Python 3 and its work is based on looking for certain elements in configurations that may indicate RouterOS network security issues. The search for suspicious elements is performed using regular expressions.
 
-Vex performs 23 search steps, these include:
+The tool performs 18 tests:
 
 ```
-1. Discovery Protocols Check: Checks whether discovery protocols (such as LLDP) are enabled on all interfaces;
-2. Bandwidth Server Check: Checks whether the Bandwidth Server is enabled;
-3. DNS Settings Check: Checks whether remote DNS queries are allowed;
-4. DDNS Settings Check: Checks whether Dynamic Domain Name System (DDNS) is enabled;
-5. UPnP Settings Check: Checks if UPnP (Universal Plug and Play) is enabled;
-6. SSH Settings Check: Checks whether cryptographic settings for SSH are enabled;
-7. Firewall Filter Rules Check: Retrieves and displays firewall filter rules;
-8. Firewall Mangle Rules Check: Retrieves and displays firewall mangle rules;
-9. Firewall NAT Rules Check: Retrieves and displays firewall NAT rules;
-10. Firewall Raw Rules Check: Retrieves and displays Raw firewall rules;
-11. Routes Check: Retrieves and displays routes;
-12. SOCKS Settings Check: Checks if the SOCKS proxy is enabled;
-13. IP Services Check: Checks the status of various IP services (Telnet, FTP, API, API-SSL, SSH, Winbox, HTTP, HTTPS);
-14. BPDU Guard Settings Check: Checks the BPDU Guard settings for STP protection;
-15. ROMON Settings Check: Checks if ROMON is enabled;
-16. MAC Telnet Server Check: Checks the MAC Telnet Server settings;
-17. MAC Winbox Server Check: Checks the MAC Winbox Server settings;
-18. MAC Ping Server Check: Checks the MAC Ping Server settings;
-19. DHCP Snooping Settings Check: Checks the DHCP Snooping settings to protect against DHCP attacks;
-20. NTP Client Settings Check: Checks the NTP client settings;
-21. VRRP Security Check: Checks the VRRP authentication settings;
-22. OSPF Security Check: Checks OSPF settings for authentication and passive interfaces;
-23. SNMP Security Check: Checks SNMP community settings for insecure values;
+1. Displays information about RouterOS version, device model, serial number
+2. Checks the settings of neighbor discovery protocols
+3. Checks the status of the Bandwidth Server
+4. Checks DNS & DDNS settings
+5. Checking the UPnP status
+6. Checking SSH status
+7. Checking for SOCKS
+8. Checking the status of ROMON
+9. Check MAC Telnet Server
+10. Check MAC Winbox Server
+11. Check MAC Ping Server
+12. Verifying VRRP authentication
+13. Checking SNMP settings
+14. OSPF Security check
+15. Checking password requirements settings
+16. Checking the PoE status
+17. Checking SMB activity
+18. Checking RMI interfaces
 ```
-
-The tool will not only help can help improve the security of the device, but also help improve the quality of hardening.
 
 > Warning: For a complete RouterOS check, it is recommended to export the configuration using `export verbose` to unload the entire configuration
 
@@ -60,152 +53,135 @@ The tool will not only help can help improve the security of the device, but als
 # Usage
 
 ```bash
-caster@kali:~$ sudo apt install python3-colorama
+caster@kali:~$ sudo apt install git python3-colorama
 caster@kali:~$ git clone https://github.com/casterbyte/Vex
 caster@kali:~$ cd Vex/
-caster@kali:~/Vex$ python3 vex.py --help
+caster@kali:~/Vex$ sudo python3 setup.py install
+caster@kali:~$ vex
 ```
 
 ```
-usage: vex.py [-h] --config CONFIG
+sage: vex.py [-h] --config CONFIG
+
+Vex: RouterOS Security Inspector
 
 options:
   -h, --help       show this help message and exit
-  --config CONFIG  RouterOS configuration file name
+  --config CONFIG  Path to the RouterOS configuration file
 ```
 
 To perform a configuration analysis, you must supply the RouterOS configuration file as input. This is done with the `--config` argument:
 
 ```bash
-caster@kali:~/Vex$ python3 vex.py --config RouterOS.conf
+caster@kali:~$ vex --config routeros.conf
 ```
 
 Here is an example of the analyzed config:
 
 ```
+[*] Config Analyzing...
+------------------------------
 [+] Device Information:
-[*] Software ID: 7HD9-Z1QD
+[*] Software ID: BGM1-F15F
 [*] Model: C52iG-5HaxD2HaxD
-[*] Serial Number: HEB08WY6MPT
+[*] Serial Number: XGB15HBGP01
 ------------------------------
-[+] Interfaces found:
-[*] Type: bridge, Name: home
-[*] Type: ethernet, Name: ether1
-[*] Type: ethernet, Name: ether2
-[*] Type: ethernet, Name: ether3
-[*] Type: ethernet, Name: ether4
-[*] Type: ethernet, Name: ether5
-[*] Type: wifiwave2, Name: wifi1
-[*] Type: wifiwave2, Name: wifi2
-[*] Type: vrrp, Name: vrrp1
-[*] Type: wireguard, Name: wg-outerspace
-[*] Type: ethernet, Name: switch1
-[*] Type: list, Name: all
-[*] Type: list, Name: none
-[*] Type: list, Name: dynamic
-[*] Type: list, Name: static
-[*] Type: list, Name: LAN
-[*] Type: lte, Name: default
-[*] Type: macsec, Name: default
+[+] Discovery Protocols:
+[!] Warning: Discovery protocols are enabled on all interfaces
+[*] Impact: Information Gathering
 ------------------------------
-[+] IP Addresses found:
-[*] IP Address: 192.168.0.254/24, Interface: home
-[*] IP Address: 10.10.101.71/32, Interface: wg-outerspace
-[*] IP Address: 192.168.0.11/24, Interface: vrrp1
+[+] Bandwidth Server:
+[!] Warning: Bandwidth Server is enabled
+[*] Impact: Potential misuse for traffic analysis and network performance degradation
 ------------------------------
-[+] Discovery Protocols Check:
-[*] Security Warning: detected set discover-interface-list=all. Possible disclosure of sensitive information
+[+] DNS Settings:
+[!] Warning: Router is configured as a DNS server
+[*] Impact: DNS Flood
+[*] Recommendation: Consider closing this port from the internet to avoid unwanted traffic
 ------------------------------
-[+] Bandwidth Server Check:
-[*] Security Warning: detected active Bandwidth Server with 'enabled=yes' setting. Possible unwanted traffic towards Bandwidth Server, be careful
+[+] DDNS Settings:
+[!] Warning: Dynamic DNS is enabled
+[*] Impact: Exposure to dynamic IP changes and potential unauthorized access
 ------------------------------
-[+] DNS Settings Check:
-[*] Security Warning: detected directive 'set allow-remote-requests=yes'. This router is a DNS server, be careful
-[*] Router is acting as a DNS server and should restrict DNS traffic from external sources to prevent DNS Flood attacks
+[+] UPnP Settings:
+[!] Warning: UPnP is enabled
+[*] Impact: Potential unauthorized port forwarding and security risks
 ------------------------------
-[+] DDNS Settings Check:
-[*] Warning: DDNS is enabled. If not specifically used, it is recommended to disable it.
+[+] SSH Strong Crypto:
+[!] Warning: SSH strong crypto is disabled (strong-crypto=no)
+[*] Impact: Less secure SSH connections
+[*] Recommendation: Enable strong crypto (strong-crypto=yes) for enhanced security. This will use stronger encryption, HMAC algorithms, larger DH primes, and disallow weaker ones
 ------------------------------
-[+] UPnP Settings Check:
-[*] Security Warning: detected directive 'set enabled=yes'. The presence of active UPnP can be indicative of post-exploitation of a compromised RouterOS, and it can also be the cause of an external perimeter breach. Switch it off
+[+] SOCKS Settings:
+[!] Warning: SOCKS proxy is enabled
+[*] Impact: Potential unauthorized access and misuse of network resources
+[*] Recommendation: Disable SOCKS proxy or ensure it is properly secured. SOCKS can be used maliciously if RouterOS is compromised
 ------------------------------
-[+] SSH Settings Check:
-[*] Security Warning: detected 'strong-crypto=no'. It is recommended to enable strong cryptographic ciphers for SSH
+[+] ROMON Settings:
+[!] Warning: ROMON is enabled
+[*] Impact: ROMON can be a jump point to other MikroTik devices and should be monitored carefully
+[*] Recommendation: Monitor ROMON activities and ensure proper security measures are in place
 ------------------------------
-[+] Firewall Filter Rules found:
-[*] Rule: add action=accept chain=input comment="Allow Established & Related, Drop Invalid" connection-state=established,related
-[*] Rule: add action=drop chain=input connection-state=invalid
-[*] Rule: add action=accept chain=forward connection-state=established,related
-[*] Rule: add action=drop chain=forward connection-state=invalid
-[!] Don't forget to use the 'Drop All Other' rule on the external interface of the router. This helps protect the router from external perimeter breaches.
+[+] MAC Ping Server Settings:
+[!] Warning: MAC Ping Server is enabled
+[*] Impact: Possible unwanted traffic
 ------------------------------
-[+] Firewall Mangle Rules found:
-[*] No mangle rules found.
-[!] In some scenarios, using the mangle table can help save CPU resources.
+[+] VRRP Authentication Settings:
+[!] Warning: VRRP interface 'vrrp1' has no authentication
+[*] Impact: Potential unauthorized access and manipulation of VRRP settings
+[*] Recommendation: Configure authentication for VRRP interfaces to prevent unauthorized access
+[!] Warning: VRRP interface 'vrrp3' has no authentication
+[*] Impact: Potential unauthorized access and manipulation of VRRP settings
+[*] Recommendation: Configure authentication for VRRP interfaces to prevent unauthorized access
 ------------------------------
-[+] Firewall NAT Rules found:
-[*] Rule: add action=masquerade chain=srcnat comment="Access to Internet" out-interface=wg-outerspace
+[+] SNMP:
+[!] Warning: SNMP community 'public' is in use
+[*] Impact: Information Gathering
+[*] Recommendation: Change the community name to something more secure
+[!] Warning: SNMP community 'private' is in use
+[*] Impact: Information Gathering
+[*] Recommendation: Change the community name to something more secure
 ------------------------------
-[+] Firewall Raw Rules found:
-[*] No raw rules found.
+[+] OSPF Interface Templates Check:
+[!] Warning: OSPF interface 'home' is not set to passive
+[!] Warning: OSPF interface 'home' has no authentication
+[*] Impact: Potential unauthorized access and network disruption
+[*] Recommendation: Configure authentication and passive mode for OSPF interfaces to enhance security
+[!] Warning: OSPF interface 'ether1' is not set to passive
+[!] Warning: OSPF interface 'ether1' has no authentication
+[*] Impact: Potential unauthorized access and network disruption
+[*] Recommendation: Configure authentication and passive mode for OSPF interfaces to enhance security
+[!] Warning: OSPF interface 'ether3' is not set to passive
+[!] Warning: OSPF interface 'ether3' has no authentication
+[*] Impact: Potential unauthorized access and network disruption
+[*] Recommendation: Configure authentication and passive mode for OSPF interfaces to enhance security
 ------------------------------
-[+] Routes:
-[*] Route: add distance=1 dst-address=111.111.111.111/32 gateway=192.168.1.1
-[*] Route: add dst-address=192.168.54.0/24 gateway=192.168.0.253
-[*] Route: add dst-address=0.0.0.0/0 gateway=wg-outerspace
+[+] Password Strength Requirements:
+[!] Warning: No minimum password complexity or length requirements
+[*] Recommendation: Set minimum password complexity and length requirements to enhance security
 ------------------------------
-[+] SOCKS Settings Check:
-[*] Security Warning: detected directive 'set enabled=yes'. SOCKS proxy can be used as a pivoting tool to access the internal network
+[+] PoE Settings:
+[!] Warning: PoE is set to auto-on
+[*] Impact: There is a risk of damaging connected devices by unexpectedly supplying power to the port
+[*] Recommendation: Review and set PoE settings appropriately
 ------------------------------
-[+] IP Services Check:
-[*] Security Warning: SSH service is enabled. Filter access, you can use more secure key authentication
-[*] Security Warning: API-SSL service is enabled. If not in use, it is recommended to disable it to prevent brute-force attacks
-[*] Security Warning: Winbox service is enabled. Winbox is constantly being attacked. Be careful with it, filter access
-[*] Security Warning: Telnet service is enabled. Turn it off, it's not safe to operate the equipment with it
-[*] Security Warning: API service is enabled. If not in use, it is recommended to disable it to prevent brute-force attacks
-[*] Security Warning: HTTP service is enabled. Be careful with web-based control panels. Filter access
-[*] Security Warning: HTTPS service is enabled. Be careful with web-based control panels. Filter access
-[*] Security Warning: FTP service is enabled. If you don't use FTP, disable it and try not to store sensitive information there
-------------------------------
-[+] BPDU Guard Settings Check:
-[*] Security Warning: detected 'bpdu-guard=no'. It is recommended to enable BPDU Guard to protect STP from attacks
-------------------------------
-[+] ROMON Settings Check:
-[*] Security Warning: ROMON is enabled. Be careful with this. If RouterOS is compromised, ROMON can be jumped to the next MikroTik hardware
-------------------------------
-[+] MAC Telnet Server Check:
-[*] Security Warning: MAC Telnet server is active on all interfaces. This reduces the security of the Winbox interface. Filter access
-------------------------------
-[+] MAC Winbox Server Check:
-[*] Security Warning: MAC Winbox Server is accessible on all interfaces. This reduces the security of the Winbox interface. Filter access
-------------------------------
-[+] MAC Ping Server Check:
-[*] Security Warning: MAC Ping Server is enabled. Possible unwanted traffic
-------------------------------
-[+] DHCP Snooping Settings Check:
-[*] Security Warning: detected 'dhcp-snooping=no'. It is recommended to enable DHCP Snooping to protect the network from DHCP attacks (DHCP Spoofing)
-------------------------------
-[+] NTP Client Settings Check:
-[*] Security Warning: NTP client is enabled. Servers: 0.pool.ntp.org, 1.pool.ntp.org
-------------------------------
-[+] VRRP Security Check:
-[*] No issues found with VRRP authentication settings
-------------------------------
-[+] OSPF Security Check:
-[*] Security Warning: OSPF authentication is not configured. There is a risk of connecting an illegal OSPF speaker
-[*] Security Warning: OSPF passive interfaces are not configured. There is a risk of connecting an illegal OSPF speaker
-------------------------------
-[+] SNMP Security Check:
-[*] Security Warning: SNMP community 'public' is set. Information Disclosure is possible. Please change SNMP community string
-[*] Security Warning: SNMP community 'private' is set. Information Disclosure is possible. Please change SNMP community string
-------------------------------
+[+] RMI Interfaces Status:
+[*] Telnet is enabled - Consider disabling for security reasons
+[*] FTP is enabled - Consider disabling for security reasons
+[*] WWW (HTTP) is enabled
+[*] SSH is enabled
+[*] WWW-SSL (HTTPS) is enabled
+[*] API is enabled - Consider disabling for security reasons
+[*] Winbox is enabled
+[*] API-SSL is enabled - Consider disabling for security reasons
+[!] Recommendation: Restrict access to RMI only from trusted subnets
+
+
 ```
 
 # Outro
 
-This is how RouterOS configuration can be analyzed for security and hardening issues. The tool will be developed and maintained by me.
-
-
+The tool is updated and maintained, suggestions: caster@exploit.org
 
 
 
