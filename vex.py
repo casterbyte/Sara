@@ -126,13 +126,16 @@ def check_upnp_settings(config_content):
     upnp_found = False
     upnp_info = []
     
-    upnp_pattern = r'/ip upnp[\s\S]*?set[\s\S]*?enabled=yes'
-    if re.search(upnp_pattern, config_content):
+    upnp_pattern = r'/ip upnp[\s\S]*?set[\s\S]*?enabled=(\w+)'
+    match = re.search(upnp_pattern, config_content)
+    if match and match.group(1) == 'yes':
         upnp_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}UPnP is enabled{Style.RESET_ALL}")
         upnp_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential unauthorized port forwarding and security risks{Style.RESET_ALL}")
         upnp_found = True
+    else:
+        upnp_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] UPnP is not enabled{Style.RESET_ALL}")
     
-    if upnp_found:
+    if upnp_found or not upnp_found:
         print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
         print(f"{Fore.CYAN}[+] UPnP Settings:{Style.RESET_ALL}")
         for line in upnp_info:
@@ -178,14 +181,17 @@ def check_socks_settings(config_content):
     socks_found = False
     socks_info = []
     
-    socks_pattern = r'/ip socks[\s\S]*?set[\s\S]*?enabled=yes'
-    if re.search(socks_pattern, config_content):
+    socks_pattern = r'/ip socks[\s\S]*?set[\s\S]*?enabled=(\w+)'
+    match = re.search(socks_pattern, config_content)
+    if match and match.group(1) == 'yes':
         socks_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}SOCKS proxy is enabled{Style.RESET_ALL}")
         socks_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential unauthorized access and misuse of network resources{Style.RESET_ALL}")
         socks_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable SOCKS proxy or ensure it is properly secured. SOCKS can be used maliciously if RouterOS is compromised{Style.RESET_ALL}")
         socks_found = True
+    else:
+        socks_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] SOCKS proxy is not enabled{Style.RESET_ALL}")
     
-    if socks_found:
+    if socks_found or not socks_found:
         print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
         print(f"{Fore.CYAN}[+] SOCKS Settings:{Style.RESET_ALL}")
         for line in socks_info:
