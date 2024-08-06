@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import re
 import argparse
 from colorama import init, Fore, Style
@@ -38,14 +40,19 @@ def extract_info(config_content):
     info_found = False
     info = []
     
+    version_pattern = r'# .* by RouterOS ([\d.]+)'
     software_id_pattern = r'# software id = (\S+)'
     model_pattern = r'# model = (\S+)'
     serial_number_pattern = r'# serial number = (\S+)'
 
+    version = re.search(version_pattern, config_content)
     software_id = re.search(software_id_pattern, config_content)
     model = re.search(model_pattern, config_content)
     serial_number = re.search(serial_number_pattern, config_content)
 
+    if version:
+        info.append(f"{Style.BRIGHT + Fore.WHITE}[*] RouterOS Version: {Style.BRIGHT + Fore.YELLOW}{version.group(1)}{Style.RESET_ALL}")
+        info_found = True
     if software_id:
         info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Software ID: {Style.BRIGHT + Fore.YELLOW}{software_id.group(1)}{Style.RESET_ALL}")
         info_found = True
@@ -175,7 +182,7 @@ def check_socks_settings(config_content):
     if re.search(socks_pattern, config_content):
         socks_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}SOCKS proxy is enabled{Style.RESET_ALL}")
         socks_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential unauthorized access and misuse of network resources{Style.RESET_ALL}")
-        socks_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable SOCKS proxy or ensure it is properly secured. SOCKS can be used maliciously if RouterOS is compromised.{Style.RESET_ALL}")
+        socks_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable SOCKS proxy or ensure it is properly secured. SOCKS can be used maliciously if RouterOS is compromised{Style.RESET_ALL}")
         socks_found = True
     
     if socks_found:
@@ -184,57 +191,25 @@ def check_socks_settings(config_content):
         for line in socks_info:
             print(line)
 
-# RMI Check
-def rmi_check(config_content):
-    ip_service_found = False
-    ip_service_info = []
+# VRRP
+def check_vrrp_authentication(config_content):
+    vrrp_found = False
+    vrrp_info = []
 
-    services = {
-        "telnet": r'/ip service[\s\S]*?set telnet[\s\S]*?disabled=no',
-        "ftp": r'/ip service[\s\S]*?set ftp[\s\S]*?disabled=no',
-        "api": r'/ip service[\s\S]*?set api[\s\S]*?disabled=no',
-        "api-ssl": r'/ip service[\s\S]*?set api-ssl[\s\S]*?disabled=no'
-    }
-
-    for service, pattern in services.items():
-        if re.search(pattern, config_content):
-            ip_service_info.append(f"{Fore.WHITE}" + "-" * 15 + Style.RESET_ALL)
-            if service == "telnet":
-                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}Telnet service is enabled {Style.BRIGHT + Fore.WHITE}(disabled=no){Style.RESET_ALL}")
-                ip_service_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Insecure management panel, potential data interception during MITM attack{Style.RESET_ALL}")
-                ip_service_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable Telnet to secure the router{Style.RESET_ALL}")
-                ip_service_found = True
-
-            if service == "ftp":
-                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}FTP service is enabled {Style.BRIGHT + Fore.WHITE}(disabled=no){Style.RESET_ALL}")
-                ip_service_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Insecure management panel; potential data interception during MITM attack{Style.RESET_ALL}")
-                ip_service_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable FTP to secure the router{Style.RESET_ALL}")
-                ip_service_found = True
-
-            if service == "api":
-                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}API service is enabled {Style.BRIGHT + Fore.WHITE}(disabled=no){Style.RESET_ALL}")
-                ip_service_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential brute force attack{Style.RESET_ALL}")
-                ip_service_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable API or secure it properly to prevent brute force attacks{Style.RESET_ALL}")
-                ip_service_found = True
-
-            if service == "api-ssl":
-                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}API-SSL service is enabled {Style.BRIGHT + Fore.WHITE}(disabled=no){Style.RESET_ALL}")
-                ip_service_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential brute force attack{Style.RESET_ALL}")
-                ip_service_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Disable API-SSL or secure it properly to prevent brute force attacks{Style.RESET_ALL}")
-                ip_service_found = True
-
-            # Check for unrestricted access
-            address_pattern = rf'/ip service[\s\S]*?set {service}[\s\S]*?address=""'
-            if re.search(address_pattern, config_content):
-                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}Service has unrestricted access{Style.RESET_ALL}")
-                ip_service_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}Management interfaces are accessible from any subnet{Style.RESET_ALL}")
-                ip_service_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Restrict access to trusted subnets{Style.RESET_ALL}")
-                ip_service_found = True
-
-    if ip_service_found:
+    vrrp_pattern = r'add\s[^\n]*?authentication=none[^\n]*?name=([\w-]+)'
+    matches = re.findall(vrrp_pattern, config_content)
+    
+    if matches:
+        for interface_name in matches:
+            vrrp_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}VRRP interface '{interface_name}' has no authentication{Style.RESET_ALL}")
+            vrrp_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential unauthorized access and manipulation of VRRP settings{Style.RESET_ALL}")
+            vrrp_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Configure authentication for VRRP interfaces to prevent unauthorized access{Style.RESET_ALL}")
+            vrrp_found = True
+    
+    if vrrp_found:
         print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
-        print(f"{Fore.CYAN}[+] RMI Settings:{Style.RESET_ALL}")
-        for line in ip_service_info:
+        print(f"{Fore.CYAN}[+] VRRP Authentication Settings:{Style.RESET_ALL}")
+        for line in vrrp_info:
             print(line)
 # ROMON
 def check_romon(config_content):
@@ -305,25 +280,7 @@ def check_mac_ping_server(config_content):
         for line in mac_ping_info:
             print(line)
 
-# VRRP 
-def check_vrrp_authentication(config_content):
-    vrrp_info = []
-    vrrp_pattern = r'/interface vrrp[\s\S]*?set[\s\S]*?authentication=none[\s\S]*?name=(\S+)[\s\S]*?interface=(\S+)[\s\S]*?priority=(\d+)'
-    
-    matches = re.finditer(vrrp_pattern, config_content)
 
-    for match in matches:
-        interface = match.group(2)
-        
-        vrrp_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}VRRP is running without authentication " + Fore.WHITE + "(authentication=none)")        
-        vrrp_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Interface: {Style.BRIGHT + Fore.YELLOW}{interface}{Style.RESET_ALL}")
-        vrrp_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Lack of authentication allows an attacker to perform MITM (VRRP Spoofing){Style.RESET_ALL}")
-
-    if vrrp_info:
-        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
-        print(f"{Fore.CYAN}[+] VRRP Authentication:{Style.RESET_ALL}")
-        for line in vrrp_info:
-            print(line)
 
 # SNMP Community Check
 def check_snmp_community(config_content):
@@ -355,34 +312,30 @@ def check_snmp_community(config_content):
             print(line)
 
 # OSPF Check
-def check_ospf_settings(config_content):
+def check_ospf_templates(config_content):
     ospf_found = False
     ospf_info = []
 
-    ospf_interface_pattern = r'/routing ospf interface-template[\s\S]*?'
-    passive_pattern = r'/routing ospf interface-template[\s\S]*?passive'
-    auth_pattern = r'/routing ospf interface-template[\s\S]*?auth='
+    ospf_pattern = r'add\s[^\n]*?interfaces=([\w-]+)[^\n]*'
+    matches = re.findall(ospf_pattern, config_content)
 
-    ospf_interface_match = re.search(ospf_interface_pattern, config_content)
-    passive_match = re.search(passive_pattern, config_content)
-    auth_match = re.search(auth_pattern, config_content)
+    for match in matches:
+        interface_block = re.search(rf'add[^\n]*?interfaces={match}[^\n]*', config_content).group(0)
+        missing_passive = 'passive' not in interface_block
+        missing_auth = 'auth=' not in interface_block
 
-    if ospf_interface_match:
-        if not passive_match:
-            ospf_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}No passive interfaces in OSPF configuration{Style.RESET_ALL}")
-            ospf_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}This allows an attacker to connect to the OSPF domain{Style.RESET_ALL}")
-            ospf_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.YELLOW}Configure passive interfaces to enhance security{Style.RESET_ALL}")
+        if missing_passive or missing_auth:
+            if missing_passive:
+                ospf_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}OSPF interface '{match}' is not set to passive{Style.RESET_ALL}")
+            if missing_auth:
+                ospf_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}OSPF interface '{match}' has no authentication{Style.RESET_ALL}")
+            ospf_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}Potential unauthorized access and network disruption{Style.RESET_ALL}")
+            ospf_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.GREEN}Configure authentication and passive mode for OSPF interfaces to enhance security{Style.RESET_ALL}")
             ospf_found = True
-
-        if not auth_match:
-            ospf_info.append(f"{Style.BRIGHT + Fore.RED}[!] Warning: {Style.BRIGHT + Fore.YELLOW}No authentication in OSPF configuration{Style.RESET_ALL}")
-            ospf_info.append(f"{Style.BRIGHT + Fore.WHITE}[*] Impact: {Style.BRIGHT + Fore.YELLOW}This allows unauthorized access to the OSPF domain{Style.RESET_ALL}")
-            ospf_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] Recommendation: {Style.BRIGHT + Fore.YELLOW}Configure authentication for OSPF to enhance security{Style.RESET_ALL}")
-            ospf_found = True
-
+    
     if ospf_found:
         print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
-        print(f"{Fore.CYAN}[+] OSPF Settings:{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}[+] OSPF Interface Templates Check:{Style.RESET_ALL}")
         for line in ospf_info:
             print(line)
 
@@ -452,6 +405,45 @@ def check_smb_settings(config_content):
         for line in smb_info:
             print(line)
 
+# Service Check
+def check_services(config_content):
+    services_info = []
+    
+    # Patterns for each service
+    service_patterns = {
+        "Telnet": r'/ip service[\s\S]*?set telnet address=.* disabled=(\S+)',
+        "FTP": r'/ip service[\s\S]*?set ftp address=.* disabled=(\S+)',
+        "WWW (HTTP)": r'/ip service[\s\S]*?set www address=.* disabled=(\S+)',
+        "SSH": r'/ip service[\s\S]*?set ssh address=.* disabled=(\S+)',
+        "WWW-SSL (HTTPS)": r'/ip service[\s\S]*?set www-ssl address=.* disabled=(\S+)',
+        "API": r'/ip service[\s\S]*?set api address=.* disabled=(\S+)',
+        "Winbox": r'/ip service[\s\S]*?set winbox address=.* disabled=(\S+)',
+        "API-SSL": r'/ip service[\s\S]*?set api-ssl address=.* disabled=(\S+)',
+    }
+    
+    for service, pattern in service_patterns.items():
+        match = re.search(pattern, config_content)
+        if match:
+            status = match.group(1)
+            if status == 'no':
+                if service in ["Telnet", "FTP", "API", "API-SSL"]:
+                    services_info.append(f"{Style.BRIGHT + Fore.RED}[*] {service} is enabled{Style.RESET_ALL} - {Style.BRIGHT + Fore.GREEN}Consider disabling for security reasons{Style.RESET_ALL}")
+                else:
+                    services_info.append(f"{Style.BRIGHT + Fore.YELLOW}[*] {service} is enabled{Style.RESET_ALL}")
+            else:
+                services_info.append(f"{Style.BRIGHT + Fore.GREEN}[*] {service} is disabled{Style.RESET_ALL}")
+        else:
+            services_info.append(f"{Style.BRIGHT + Fore.RED}[!] {service} configuration not found{Style.RESET_ALL}")
+    
+    if services_info:
+        print(f"{Fore.CYAN}" + "-" * 30 + Style.RESET_ALL)
+        print(f"{Fore.CYAN}[+] RMI Interfaces Status:{Style.RESET_ALL}")
+        for line in services_info:
+            print(line)
+
+    # General recommendation
+    print(f"{Style.BRIGHT + Fore.GREEN}[!] Recommendation:{Style.RESET_ALL} {Style.BRIGHT + Fore.GREEN}Restrict access to RMI only from trusted subnets{Style.RESET_ALL}")
+
 # Main
 def main():
     parser = argparse.ArgumentParser(description="Vex: RouterOS Security Inspector")
@@ -472,17 +464,17 @@ def main():
         check_upnp_settings(config_content)
         check_ssh_settings(config_content)
         check_socks_settings(config_content)
-        rmi_check(config_content)
         check_romon(config_content)
         check_mac_server(config_content)
         check_mac_winbox_server(config_content)
         check_mac_ping_server(config_content)
         check_vrrp_authentication(config_content)
         check_snmp_community(config_content)
-        check_ospf_settings(config_content)
+        check_ospf_templates(config_content)
         check_user_settings(config_content)
         check_poe_settings(config_content)
         check_smb_settings(config_content)
+        check_services(config_content)
     except Exception as e:
         print(f"{Fore.RED}Error reading file: {e}{Style.RESET_ALL}")
 
