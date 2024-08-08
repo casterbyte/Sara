@@ -175,8 +175,6 @@ Here is an example of the analyzed config:
 [*] Winbox is enabled
 [*] API-SSL is enabled - Consider disabling for security reasons
 [!] Recommendation: Restrict access to RMI only from trusted subnets
-
-
 ```
 
 # Outro
