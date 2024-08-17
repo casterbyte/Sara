@@ -419,6 +419,5 @@ def main():
     except Exception as e:
         print(f"{Fore.RED}Error: An unexpected error occurred: {e}{Style.RESET_ALL}")
 
-# Проверка на запуск скрипта
 if __name__ == "__main__":
     main()
