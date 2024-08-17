@@ -18,7 +18,7 @@ def banner():
   |_____/ \__,_|_|  \__,_|  v1.0
 """
     print(banner_text)
-    print("    " + Fore.YELLOW + "RouterOS Security Inspector. Designed for Security Professionals\n")
+    print("    " + Fore.YELLOW + "RouterOS Security Inspector. Designed for security professionals\n")
     print("    " + Fore.YELLOW + "Author: " + Style.RESET_ALL + "Magama Bazarov, <caster@exploit.org>\n")
     print("    " + "It's recommended to provide a configuration file exported using the 'export verbose' command")
     print()
