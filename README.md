@@ -69,10 +69,10 @@ usage: sara [-h] --config-file CONFIG_FILE
 sara: error: the following arguments are required: --config-file
 ```
 
-Sara uses just one argument, it is the name/path to the RouterOS configuration file:
+Sara uses just one argument, it is the name/path to the RouterOS configuration file. The tool supports `.rsc` files.
 
 ```bash
-caster@kali:~$ sara --config-file routeros.txt
+caster@kali:~$ sara --config-file routeros.rsc
 
     _____                 
    / ____|                
