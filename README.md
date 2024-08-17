@@ -1,187 +1,103 @@
-# Vex: RouterOS Security Inspector
+# Sara: RouterOS Security Inspector
 
-
-Autonomous RouterOS configuration analyzer to find security issues. No networking required, only read configurations.
-
-![](/banner/banner.png)
+It is a autonomous RouterOS configuration analyzer for finding security issues on MikroTik hardware.
 
 ```
-Vex: RouterOS Security Inspector
-Designed for security engineers
+    _____                 
+   / ____|                
+  | (___   __ _ _ __ __ _ 
+   \___ \ / _` | '__/ _` |
+   ____) | (_| | | | (_| |
+  |_____/ \__,_|_|  \__,_|  v1.0
 
-Author: Magama Bazarov, <caster@exploit.org>
-Pseudonym: Caster
-Version: 1.1
+    RouterOS Security Inspector. Designed for Security Professionals
+
+    Author: Magama Bazarov, <caster@exploit.org>
 ```
 
-# Disclaimer
+# Mechanism
 
-The tool is intended solely for analyzing the security of RouterOS hardware. The author is not responsible for any damage caused by using this tool
+This tool is written in Python 3 and uses regular expressions to look for specific values in configurations to detect a problem. As of v1.0, the tool performs 20 security checks, including:
 
--------------
-# Operating
+1. **SMB Service Detection**: Identifies if the SMB service is enabled, which may expose the device to vulnerabilities like CVE-2018-7445;
 
-It is written in Python 3 and its work is based on looking for certain elements in configurations that may indicate RouterOS network security issues. The search for suspicious elements is performed using regular expressions.
+2. **RMI Services Analysis**: Examines active Remote Management Interface (RMI) services such as Telnet, FTP, SSH, and others. The tool warns about unsafe services and provides recommendations for securing them;
 
-The tool performs 18 tests:
-
-```
-1. Displays information about RouterOS version, device model, serial number
-2. Checks the settings of neighbor discovery protocols
-3. Checks the status of the Bandwidth Server
-4. Checks DNS & DDNS settings
-5. Checking the UPnP status
-6. Checking SSH status
-7. Checking for SOCKS
-8. Checking the status of ROMON
-9. Check MAC Telnet Server
-10. Check MAC Winbox Server
-11. Check MAC Ping Server
-12. Verifying VRRP authentication
-13. Checking SNMP settings
-14. OSPF Security check
-15. Checking password requirements settings
-16. Checking the PoE status
-17. Checking SMB activity
-18. Checking RMI interfaces
-```
-
-> Warning: For a complete RouterOS check, it is recommended to export the configuration using `export verbose` to unload the entire configuration
-
---------
+3. **UPnP Status Check**: Detects if Universal Plug and Play (UPnP) is enabled, which can open up the network to unauthorized access;
+4. **WiFi Configuration Review**: Analyzes WiFi settings for vulnerabilities, including insecure authentication methods, enabled WPS, and PMKID exposure;
+5. **DNS Configuration Review**: Checks DNS settings, looking for remote DNS requests being allowed and the absence of DNS over HTTPS (DoH);
+6. **Dynamic DNS (DDNS) Status**: Identifies if DDNS is enabled, which might expose your network to unnecessary risks;
+7. **Power over Ethernet (PoE) Settings Review**: Analyzes PoE configurations to ensure power management does not pose risks to connected devices;
+8. **Protected RouterBOOT Check**: Ensures that Protected RouterBOOT is enabled, preventing unauthorized changes to the bootloader settings;
+9. **SOCKS Proxy Detection**: Identifies if a SOCKS proxy is enabled, which could indicate a compromised device;
+10. **Bandwidth Server Check**: Detects if the Bandwidth Server is enabled, which could lead to unwanted traffic on the network;
+11. **OSPF Interface Analysis**: Examines OSPF interface settings for missing passive mode and authentication, both of which are crucial for securing OSPF communications;
+12. **VRRP Interface Analysis**: Checks for VRRP interfaces that lack proper authentication, potentially exposing the network to Man-in-the-Middle (MITM) attacks;
+13. **Discovery Protocols Configuration**: Reviews the settings for network discovery protocols, ensuring they are limited to trusted interfaces;
+14. **User Password Policy Check**: Analyzes user password policies to ensure they meet security best practices;
+15. **SSH Strong Crypto Detection**: Detects if SSH is configured with weak cryptography, providing advice on how to secure it;
+16. **Connection Tracking Status**: Reviews the connection tracking settings, advising on when it might be beneficial to disable it;
+17. **RoMON Status Check**: Detects if RoMON is enabled, highlighting the need for careful management to prevent unauthorized access to other RouterOS devices;
+18. **MAC Server Settings Review**: Analyzes MAC Server and MAC Winbox settings, recommending restrictions to enhance security;
+19. **SNMP Analysis**: Identifies the use of default or weak SNMP community strings, which could lead to information gathering attacks;
+20. **Port Forwarding Rules Check**: Detects port forwarding rules (dst-nat), warning about potential exposure of internal services to the internet.
 
 # Usage
 
-```bash
-caster@kali:~$ sudo apt install git python3-colorama
-caster@kali:~$ git clone https://github.com/casterbyte/Vex
-caster@kali:~$ cd Vex/
-caster@kali:~/Vex$ sudo python3 setup.py install
-caster@kali:~$ vex
-```
-
-```
-sage: vex.py [-h] --config CONFIG
-
-Vex: RouterOS Security Inspector
-
-options:
-  -h, --help       show this help message and exit
-  --config CONFIG  Path to the RouterOS configuration file
-```
-
-To perform a configuration analysis, you must supply the RouterOS configuration file as input. This is done with the `--config` argument:
+To install Sara:
 
 ```bash
-caster@kali:~$ vex --config routeros.conf
+caster@kali:~$ sudo apt install python3-colorama git
+caster@kali:~$ git clone https://github.com/casterbyte/Sara
+caster@kali:~/Sara$ sudo python3 setup.py install
+caster@kali:~$ sara                                            
+
+    _____                 
+   / ____|                
+  | (___   __ _ _ __ __ _ 
+   \___ \ / _` | '__/ _` |
+   ____) | (_| | | | (_| |
+  |_____/ \__,_|_|  \__,_|  v1.0
+
+    RouterOS Security Inspector. Designed for Security Professionals
+
+    Author: Magama Bazarov, <caster@exploit.org>
+
+    It's recommended to provide a configuration file exported using the 'export verbose' command
+
+usage: sara [-h] --config-file CONFIG_FILE
+sara: error: the following arguments are required: --config-file
 ```
 
-Here is an example of the analyzed config:
+Sara uses just one argument, it is the name/path to the RouterOS configuration file:
 
-```
-[*] Config Analyzing...
-------------------------------
-[+] Device Information:
-[*] Software ID: BGM1-F15F
-[*] Model: C52iG-5HaxD2HaxD
-[*] Serial Number: XGB15HBGP01
-------------------------------
-[+] Discovery Protocols:
-[!] Warning: Discovery protocols are enabled on all interfaces
-[*] Impact: Information Gathering
-------------------------------
-[+] Bandwidth Server:
-[!] Warning: Bandwidth Server is enabled
-[*] Impact: Potential misuse for traffic analysis and network performance degradation
-------------------------------
-[+] DNS Settings:
-[!] Warning: Router is configured as a DNS server
-[*] Impact: DNS Flood
-[*] Recommendation: Consider closing this port from the internet to avoid unwanted traffic
-------------------------------
-[+] DDNS Settings:
-[!] Warning: Dynamic DNS is enabled
-[*] Impact: Exposure to dynamic IP changes and potential unauthorized access
-------------------------------
-[+] UPnP Settings:
-[!] Warning: UPnP is enabled
-[*] Impact: Potential unauthorized port forwarding and security risks
-------------------------------
-[+] SSH Strong Crypto:
-[!] Warning: SSH strong crypto is disabled (strong-crypto=no)
-[*] Impact: Less secure SSH connections
-[*] Recommendation: Enable strong crypto (strong-crypto=yes) for enhanced security. This will use stronger encryption, HMAC algorithms, larger DH primes, and disallow weaker ones
-------------------------------
-[+] SOCKS Settings:
-[!] Warning: SOCKS proxy is enabled
-[*] Impact: Potential unauthorized access and misuse of network resources
-[*] Recommendation: Disable SOCKS proxy or ensure it is properly secured. SOCKS can be used maliciously if RouterOS is compromised
-------------------------------
-[+] ROMON Settings:
-[!] Warning: ROMON is enabled
-[*] Impact: ROMON can be a jump point to other MikroTik devices and should be monitored carefully
-[*] Recommendation: Monitor ROMON activities and ensure proper security measures are in place
-------------------------------
-[+] MAC Ping Server Settings:
-[!] Warning: MAC Ping Server is enabled
-[*] Impact: Possible unwanted traffic
-------------------------------
-[+] VRRP Authentication Settings:
-[!] Warning: VRRP interface 'vrrp1' has no authentication
-[*] Impact: Potential unauthorized access and manipulation of VRRP settings
-[*] Recommendation: Configure authentication for VRRP interfaces to prevent unauthorized access
-[!] Warning: VRRP interface 'vrrp3' has no authentication
-[*] Impact: Potential unauthorized access and manipulation of VRRP settings
-[*] Recommendation: Configure authentication for VRRP interfaces to prevent unauthorized access
-------------------------------
-[+] SNMP:
-[!] Warning: SNMP community 'public' is in use
-[*] Impact: Information Gathering
-[*] Recommendation: Change the community name to something more secure
-[!] Warning: SNMP community 'private' is in use
-[*] Impact: Information Gathering
-[*] Recommendation: Change the community name to something more secure
-------------------------------
-[+] OSPF Interface Templates Check:
-[!] Warning: OSPF interface 'home' is not set to passive
-[!] Warning: OSPF interface 'home' has no authentication
-[*] Impact: Potential unauthorized access and network disruption
-[*] Recommendation: Configure authentication and passive mode for OSPF interfaces to enhance security
-[!] Warning: OSPF interface 'ether1' is not set to passive
-[!] Warning: OSPF interface 'ether1' has no authentication
-[*] Impact: Potential unauthorized access and network disruption
-[*] Recommendation: Configure authentication and passive mode for OSPF interfaces to enhance security
-[!] Warning: OSPF interface 'ether3' is not set to passive
-[!] Warning: OSPF interface 'ether3' has no authentication
-[*] Impact: Potential unauthorized access and network disruption
-[*] Recommendation: Configure authentication and passive mode for OSPF interfaces to enhance security
-------------------------------
-[+] Password Strength Requirements:
-[!] Warning: No minimum password complexity or length requirements
-[*] Recommendation: Set minimum password complexity and length requirements to enhance security
-------------------------------
-[+] PoE Settings:
-[!] Warning: PoE is set to auto-on
-[*] Impact: There is a risk of damaging connected devices by unexpectedly supplying power to the port
-[*] Recommendation: Review and set PoE settings appropriately
-------------------------------
-[+] RMI Interfaces Status:
-[*] Telnet is enabled - Consider disabling for security reasons
-[*] FTP is enabled - Consider disabling for security reasons
-[*] WWW (HTTP) is enabled
-[*] SSH is enabled
-[*] WWW-SSL (HTTPS) is enabled
-[*] API is enabled - Consider disabling for security reasons
-[*] Winbox is enabled
-[*] API-SSL is enabled - Consider disabling for security reasons
-[!] Recommendation: Restrict access to RMI only from trusted subnets
+```bash
+caster@kali:~$ sara --config-file routeros.txt
+
+    _____                 
+   / ____|                
+  | (___   __ _ _ __ __ _ 
+   \___ \ / _` | '__/ _` |
+   ____) | (_| | | | (_| |
+  |_____/ \__,_|_|  \__,_|  v1.0
+
+    RouterOS Security Inspector. Designed for Security Professionals
+
+    Author: Magama Bazarov, <caster@exploit.org>
+
+    It's recommended to provide a configuration file exported using the 'export verbose' command
+
+[*] Analyzing the configuration file: /mnt/hgfs/Development/Sara/routeros.txt (36.38 KB)
+
+[+] Device Information
+    [*] RouterOS Version: X.XX.X
+    [*] Model: XXXX-XXXXXXXXXX
+    [*] Serial Number: XXXXXXXXXXX
 ```
 
 # Outro
 
-The tool is updated and maintained, suggestions: caster@exploit.org
-
-
+Sara will be maintained and updated, suggestions: caster@exploit.org
 
 
 
