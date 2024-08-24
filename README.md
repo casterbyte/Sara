@@ -93,11 +93,61 @@ caster@kali:~$ sara --config-file routeros.rsc
     [*] RouterOS Version: X.XX.X
     [*] Model: XXXX-XXXXXXXXXX
     [*] Serial Number: XXXXXXXXXXX
+
+[+] Checking RMI Services
+    [!] Warning: The following RMI services are enabled and may be unsafe: telnet, ftp, www.
+    [!] Caution: The following RMI services are enabled: ssh, www-ssl, winbox.
+    [!] Note: The following RMI services are enabled and might be susceptible to brute force attacks: api, api-ssl.
+    [*] Solution: Disable the above RMI services if they are not required for security.
+    [*] Tip: Restrict access to enabled services to trusted subnets only.
+
+[+] Checking UPnP
+    [!] Warning: UPnP is enabled. This can expose your network to various security risks, including unauthorized access.
+    [*] Solution: Disable UPnP unless absolutely necessary, and ensure your firewall is properly configured.
+
+[+] Checking WiFi Settings
+    [!] Warning: WPS is enabled on interface wifi1. WPS Pin code can be cracked, brute-forced.
+    [!] Warning: PMKID is enabled on interface wifi1. PMKID is easy to bruteforce.
+    [!] Warning: Interface wifi1 is using insecure authentication method 'wpa2-psk'. WPA/WPA2-PSK are long gone, use WPA2-E, WPA3.
+
+[+] Checking DNS Settings
+    [!] Warning: Router is configured to allow remote DNS requests. Close the DNS UDP/53 port from the Internet.
+    [!] Note: DNS over HTTPS (DoH) is not configured. Consider configuring a DoH server for improved privacy.
+
+[+] Checking PoE Settings
+    [!] Warning: PoE is enabled on interface ether1 with setting 'auto-on'. This could supply power to connected devices and potentially damage them if not properly managed.
+
+[+] Checking Protected RouterBOOT
+    [!] Warning: Protected RouterBOOT is disabled. This may allow unauthorized changes to the bootloader settings.
+    [*] Solution: Enable Protected RouterBOOT to prevent unauthorized access to the bootloader.
+
+[+] Checking SOCKS Proxy
+    [!] Warning: SOCKS Proxy is enabled. The presence of SOCKS may indicate that the device has been compromised.
+    [*] Solution: Disable SOCKS Proxy if it is not required.
+
+[+] Checking User Password Policies
+    [!] Warning: Password policies are not properly configured. Both minimum password categories and minimum password length are set to 0.
+    [*] Solution: Set a higher minimum password length and require at least one or more character categories (e.g., uppercase, lowercase, numbers, special characters) for better security.
+
+[+] Checking Connection Tracking
+    [!] Connection Tracking is currently set to 'auto'.
+    [*] Advice: If this device is being used as a transit router, you might consider disabling Connection Tracking to improve performance. However, proceed with caution as it can affect certain network features.
+
+[+] Checking MAC Server Settings
+    [!] Warning: MAC Server is allowed on all interfaces (allowed-interface-list=all). This compromises the security of the Winbox interface.
+    [!] Warning: MAC Winbox is allowed on all interfaces (allowed-interface-list=all). This compromises the security of the Winbox interface.
+    [!] Warning: MAC Ping is enabled. Possible unwanted traffic.
+    [*] Solution: Limit MAC server and MAC Winbox to specific trusted interfaces, and disable MAC Ping if it is not required.
+
+[+] Checking SNMP Communities
+    [!] Warning: SNMP community 'public' is in use. Possible Information Gathering attack vector by bruteforcing community string.
+    [!] Warning: SNMP community 'private' is in use. Possible Information Gathering attack vector by bruteforcing community string.
+    [*] Solution: Change the SNMP community names to something more secure, and restrict SNMP access to trusted IP addresses only.
 ```
 
 # Outro
 
-Sara will be maintained and updated, suggestions: caster@exploit.org
+Tool will be maintained and updated, suggestions: caster@exploit.org
 
 
 
