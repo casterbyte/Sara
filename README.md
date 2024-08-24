@@ -71,6 +71,8 @@ sara: error: the following arguments are required: --config-file
 
 Sara uses just one argument, it is the name/path to the RouterOS configuration file. The tool supports `.rsc` files.
 
+# Work Example
+
 ```bash
 caster@kali:~$ sara --config-file routeros.rsc
 
@@ -87,12 +89,12 @@ caster@kali:~$ sara --config-file routeros.rsc
 
     It's recommended to provide a configuration file exported using the 'export verbose' command
 
-[*] Analyzing the configuration file: /mnt/hgfs/Development/Sara/routeros.txt (36.38 KB)
+[*] Analyzing the configuration file: forsara.rsc (34.53 KB)
 
 [+] Device Information
-    [*] RouterOS Version: X.XX.X
-    [*] Model: XXXX-XXXXXXXXXX
-    [*] Serial Number: XXXXXXXXXXX
+    [*] RouterOS Version: 7.15.3
+    [*] Model: C52iG-5HaxD2HaxD
+    [*] Serial Number: HEB08WY6MPT
 
 [+] Checking RMI Services
     [!] Warning: The following RMI services are enabled and may be unsafe: telnet, ftp, www.
