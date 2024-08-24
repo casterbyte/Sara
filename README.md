@@ -92,9 +92,9 @@ caster@kali:~$ sara --config-file routeros.rsc
 [*] Analyzing the configuration file: forsara.rsc (34.53 KB)
 
 [+] Device Information
-    [*] RouterOS Version: 7.15.3
-    [*] Model: C52iG-5HaxD2HaxD
-    [*] Serial Number: HEB08WY6MPT
+    [*] RouterOS Version: X.XX.X
+    [*] Model: XXXX-XXXXXXXXXX
+    [*] Serial Number: XXXXXXXXXXX
 
 [+] Checking RMI Services
     [!] Warning: The following RMI services are enabled and may be unsafe: telnet, ftp, www.
