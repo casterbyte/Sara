@@ -25,7 +25,7 @@ def banner():
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config-file', required=True, help='Path to the RouterOS configuration file')
+    parser.add_argument('--config-file', required=True, help='Path to the RouterOS configuration file (or .rsc)')
     return parser.parse_args()
 
 def extract_device_info(config_data):
