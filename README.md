@@ -59,7 +59,7 @@ caster@kali:~$ sara
    ____) | (_| | | | (_| |
   |_____/ \__,_|_|  \__,_|  v1.0
 
-    RouterOS Security Inspector. Designed for Security Professionals
+    RouterOS Security Inspector. Designed for security professionals
 
     Author: Magama Bazarov, <caster@exploit.org>
 
