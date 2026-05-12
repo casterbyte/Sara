@@ -182,18 +182,15 @@ def check_rmi_services(connection):
         line = line.strip()
         if not line:
             continue
-        # skip disabled/default
-        if re.search(r"^\d+\s+X\b", line):
+        # skip disabled (X*) or dynamic (D*) services
+        if re.match(r"^\d+\s+[A-Z]*[XD][A-Z]*\s", line):
             continue
-        if re.search(r"^\d+\s+D\b", line):
-            continue
-
         match = re.search(r"(\S+)\s+\d+", line)
         if not match:
             continue
 
         service_name = match.group(1).lower()
-        display_name = service_name.upper().replace("WWW", "HTTP").replace("WWW-SSL", "HTTPS")
+        display_name = service_name.upper().replace("WWW-SSL", "HTTPS").replace("WWW", "HTTP")
 
         # high risk
         if service_name in high_risk:
