@@ -5,6 +5,7 @@
 # This project is not affiliated with or endorsed by SIA Mikrotīkls
 
 import json, re, os, requests, time
+from datetime import datetime
 from packaging.version import Version, InvalidVersion
 from colorama import Fore, Style
 
@@ -13,6 +14,7 @@ NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 KEYWORD = "routeros"
 RESULTS_PER_PAGE = 2000
 OUTPUT_FILE = "routeros_cves.json"
+TIMEDRIFT = 900  # 900 seconds
 GUTTER = 2  # spaces between columns
 
 
@@ -261,8 +263,17 @@ def load_cve_data():
         fetch_all_cves()
     else:
         print(Fore.YELLOW + f"[?] {OUTPUT_FILE} already exists.")
-        answer = input(Fore.YELLOW + "    Overwrite it with fresh CVE data? [yes/no]: ").strip().lower()
-        if answer == "yes":
+        # Get file last change date
+        file_mtime = os.path.getmtime(OUTPUT_FILE)
+        current_time = time.time()
+        time_diff = current_time - file_mtime
+        #answer = input(Fore.YELLOW + "    Overwrite it with fresh CVE data? [yes/no]: ").strip().lower()
+        #if answer == "no":
+        if time_diff < TIMEDRIFT:
+            print(Fore.GREEN + f"    File is recent (modified {time_diff:.0f}s ago). Skipping download.")
+        else:
+        #if answer == "yes":
+            print(Fore.YELLOW + f"    File is old (modified {time_diff:.0f}s ago). Downloading fresh data...")
             fetch_all_cves()
 
     try:
